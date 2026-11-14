@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aegis-common"
+version = "0.1.0"
+description = "Utilidades compartidas de AegisVolt: configuración por ambiente, nombres de recursos"
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[tool.setuptools]
+packages = ["aegis_common"]
