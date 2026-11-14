@@ -1,0 +1,36 @@
+# Configuración compartida de calidad para todo el monorepo (ruff + pytest).
+[project]
+name = "aegisvolt"
+version = "0.1.0"
+description = "Plataforma de gestión de carga para flotas eléctricas"
+requires-python = ">=3.12,<3.13"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = ["frontend", "infra"]
+
+[tool.ruff.lint]
+select = [
+  "E", "W",  # pycodestyle
+  "F",       # pyflakes
+  "I",       # orden de imports
+  "B",       # bugbear: errores probables
+  "UP",      # sintaxis moderna de Python
+  "S",       # bandit: seguridad
+  "SIM",     # simplificaciones
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["aegis_common"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]  # assert es lo esperado en pytest
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+  "integration: requiere Floci (AWS_ENDPOINT_URL)",
+  "e2e: requiere el stack completo levantado",
+]

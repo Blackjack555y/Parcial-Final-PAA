@@ -1,0 +1,31 @@
+# Emulador de AWS para desarrollo local (Floci).
+# Uso: ./scripts/dev.sh up   |   docker compose up -d floci
+name: aegisvolt
+
+services:
+  floci:
+    image: floci/floci:2.4.0          # versión fijada: los cambios de Floci no nos rompen la demo
+    container_name: aegisvolt-floci
+    ports:
+      - "127.0.0.1:4566:4566"         # solo accesible desde este equipo
+    environment:
+      FLOCI_HOSTNAME: floci           # URLs devueltas válidas desde otros contenedores
+      FLOCI_STORAGE_MODE: wal         # write-ahead log: el tfstate en S3 sobrevive a reinicios
+      FLOCI_STORAGE_PERSISTENT_PATH: /app/data
+    volumes:
+      - floci-data:/app/data
+    healthcheck:
+      # La imagen no trae curl/wget/grep: petición HTTP con /dev/tcp de bash
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/4566 && printf 'GET /_floci/health HTTP/1.0\\r\\n\\r\\n' >&3 && read -r status <&3 && [[ $$status == *' 200 '* ]]"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks: [aegisvolt]
+
+volumes:
+  floci-data:
+
+networks:
+  aegisvolt:
+    name: aegisvolt
