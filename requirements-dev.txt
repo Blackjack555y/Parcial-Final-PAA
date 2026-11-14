@@ -1,0 +1,6 @@
+# Dependencias de desarrollo y CI (Python 3.12).
+-e ./libs/aegis_common
+pytest==9.2.0
+ruff==0.17.5
+boto3==1.44.3
+pre-commit==4.3.0
