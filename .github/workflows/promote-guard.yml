@@ -1,0 +1,42 @@
+# Hace cumplir la cadena de promoción lineal:
+#   feature/* -> dev   |   dev -> test   |   test -> prod
+# Cualquier otro par (p. ej. feature/* -> test, dev -> prod) falla y el ruleset bloquea el merge.
+name: promote-guard
+
+on:
+  pull_request:
+    branches: [dev, test, prod]
+    types: [opened, reopened, synchronize, edited] # edited: si cambian la rama base del PR
+
+permissions:
+  contents: read
+
+jobs:
+  promote-guard:
+    name: promote-guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validar origen → destino
+        # Los nombres de rama los controla quien abre el PR: se pasan por env, nunca
+        # interpolados en el script, para evitar inyección de comandos.
+        env:
+          BASE: ${{ github.base_ref }}
+          HEAD: ${{ github.head_ref }}
+          SAME_REPO: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+        run: |
+          case "$BASE" in
+            dev)  [[ "$HEAD" =~ ^feature/[a-z0-9][a-z0-9._-]*$ ]] && ok=1 || \
+                    reason="a dev solo entran ramas feature/<nombre-en-minúsculas>" ;;
+            test) [[ "$HEAD" == "dev" && "$SAME_REPO" == "true" ]] && ok=1 || \
+                    reason="a test solo se promueve desde dev" ;;
+            prod) [[ "$HEAD" == "test" && "$SAME_REPO" == "true" ]] && ok=1 || \
+                    reason="a prod solo se promueve desde test" ;;
+            *)    reason="rama destino no gestionada: $BASE" ;;
+          esac
+          if [[ "${ok:-0}" == 1 ]]; then
+            echo "✅ Promoción válida: $HEAD → $BASE" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::error::Promoción inválida $HEAD → $BASE: $reason"
+            echo "❌ Promoción inválida: $HEAD → $BASE ($reason)" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi

@@ -1,0 +1,38 @@
+# Hooks locales: pre-commit install  (ver README)
+# Mismas reglas que el job lint-build del CI, para fallar antes de abrir el PR.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+      - id: detect-private-key
+      - id: no-commit-to-branch          # nunca commitear directo a ramas de ambiente
+        args: [--branch, dev, --branch, test, --branch, prod]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.5
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      - id: shellcheck
+
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.109.5
+    hooks:
+      - id: terraform_fmt
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
