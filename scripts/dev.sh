@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Atajos de desarrollo local de AegisVolt.
 #   ./scripts/dev.sh up        levanta Floci (persistente) y espera a que esté sano
+#   ./scripts/dev.sh up-apps [env]  levanta además los 4 servicios en contenedores (gateway :8000)
+#   ./scripts/dev.sh down-apps      detiene los contenedores de los servicios (Floci sigue)
 #   ./scripts/dev.sh down      detiene el stack (los datos se conservan)
 #   ./scripts/dev.sh reset     detiene el stack y BORRA los datos de Floci (pide confirmación)
 #   ./scripts/dev.sh status    estado de los contenedores y de Floci
@@ -35,8 +37,24 @@ case "${1:-help}" in
     docker compose up -d --wait floci
     curl -fs "$AWS_ENDPOINT_URL/_floci/health" >/dev/null && echo "Floci listo en $AWS_ENDPOINT_URL"
     ;;
+  up-apps)
+    # Token de administración (flags): se genera una vez y vive fuera del repo.
+    mkdir -p .run
+    [[ -s .run/admin-token ]] || python3 -c 'import secrets; print(secrets.token_urlsafe(24))' >.run/admin-token
+    chmod 600 .run/admin-token
+    AEGIS_ENV="${2:-dev}" FLAGS_ADMIN_TOKEN="$(cat .run/admin-token)" \
+      IMAGE_TAG="$(git rev-parse --short HEAD)" \
+      docker compose -f compose.yaml -f compose.apps.yaml up -d --build --wait
+    echo "Stack ${2:-dev} listo: http://127.0.0.1:8000/graphql (X-Admin-Token en .run/admin-token)"
+    ;;
+  down-apps)
+    docker compose -f compose.yaml -f compose.apps.yaml stop \
+      graphql-gateway station-reservation-service billing-wallet-service energy-dispatch-service
+    docker compose -f compose.yaml -f compose.apps.yaml rm -f \
+      graphql-gateway station-reservation-service billing-wallet-service energy-dispatch-service
+    ;;
   down)
-    docker compose down
+    docker compose -f compose.yaml -f compose.apps.yaml down
     ;;
   reset)
     read -r -p "Esto borra el estado de Floci (incluido el tfstate en S3). ¿Continuar? [s/N] " ok
@@ -69,6 +87,6 @@ case "${1:-help}" in
     esac
     ;;
   *)
-    sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
     ;;
 esac

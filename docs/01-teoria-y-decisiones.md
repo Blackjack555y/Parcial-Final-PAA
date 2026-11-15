@@ -219,3 +219,37 @@ Estado actual:
   servicio emisor en la línea JSON.
 - **Decisión:** el formateador protege `service`, `env`, `version`, `correlation_id`, etc.
   Las métricas por servicio dependen de ello.
+
+---
+
+## Decisiones de la Fase 3 (contenedores y pruebas)
+
+### C1. Un Dockerfile por servicio, contexto en la raíz
+
+- **Motivo:** cada servicio es una imagen independiente (despliegue y canary por separado), pero
+  todas necesitan `libs/aegis_common`. El contexto en la raíz permite copiarla sin publicarla en un
+  registro de paquetes.
+
+### C2. La base se fija por digest y se aplica `apt-get upgrade`
+
+- **Motivo:** el digest garantiza builds reproducibles. El upgrade incorpora parches publicados
+  después de la imagen base: Trivy encontró CVE-2026-76844 y CVE-2026-85091 en `zlib1g`, ambos
+  con parche.
+- **Costo aceptado:** dos builds en fechas distintas pueden traer paquetes del SO distintos.
+
+### C3. Trivy como gate en `lint-build`
+
+- **Criterio:** HIGH y CRITICAL con parche disponible (`--ignore-unfixed`). Lo que no tiene parche
+  no se puede corregir y bloquearía el pipeline sin aportar seguridad.
+
+### C4. El e2e de CI usa el mismo Terraform
+
+- **Motivo:** si el e2e creara las tablas con un script aparte, podría divergir del Terraform real.
+  Usar el mismo código (con un backend local desechable) valida también la infraestructura en cada
+  PR.
+
+### C5. Pruebas e2e repetibles sobre datos persistentes
+
+- **Motivo:** las pruebas buscan conectores libres, usan `idempotencyKey` únicas, detienen las
+  cargas que inician y restauran las flags al terminar. Por eso se pueden correr contra el `dev`
+  local sin "ensuciarlo".
