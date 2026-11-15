@@ -13,8 +13,8 @@ Proyecto final individual de **Patrones Arquitectónicos Avanzados**.
 
 | Fase | Contenido | Estado |
 | --- | --- | --- |
-| 0 | Entorno, pruebas de Floci y gobernanza Git | En curso |
-| 1 | Terraform: S3 versionado, workspaces, VPC/VPCE, DynamoDB, EKS, API Gateway | Pendiente |
+| 0 | Entorno, pruebas de Floci y gobernanza Git | ✅ Completada |
+| 1 | Terraform: S3 versionado, workspaces, VPC/VPCE, DynamoDB, EKS, API Gateway | ✅ Completada |
 | 2 | Microservicios, GraphQL, SAGA y feature flags | Pendiente |
 | 3 | Docker y pruebas reales en CI | Pendiente |
 | 4 | Kubernetes, canary y deploy por rama | Pendiente |
@@ -201,6 +201,13 @@ pre-commit install
 ./scripts/dev.sh up
 ./scripts/dev.sh smoke             # pruebas F0-1 a F0-8
 
+# Infraestructura (Terraform sobre Floci)
+./scripts/tf.sh bootstrap apply    # bucket S3 versionado del estado (una sola vez)
+./scripts/tf.sh dev init           # backend S3 + workspaces dev/test/prod
+./scripts/tf.sh dev plan
+./scripts/tf.sh dev apply
+./scripts/tf.sh dev versions       # historial del tfstate de dev en S3
+
 # Calidad
 ./scripts/dev.sh lint
 ./scripts/dev.sh test all          # unit + integration + e2e
@@ -212,6 +219,8 @@ pre-commit install
 | `./scripts/dev.sh reset` | Detiene Floci y **borra** su estado, incluido el tfstate (pide confirmación) |
 | `./scripts/dev.sh status` | Estado de los contenedores y de Floci |
 | `./scripts/dev.sh test unit\|integration\|e2e\|all` | Pruebas; sin `.venv`, corren en un contenedor de Python 3.12 |
+| `./scripts/tf.sh <env> plan\|apply\|output\|versions\|restore` | Terraform con el workspace del ambiente seleccionado explícitamente |
+| `./scripts/setup_runner.sh` | Instala el runner self-hosted de GitHub Actions (servicio `systemd --user`) |
 | `./scripts/setup_rulesets.sh` | Aplica en GitHub los rulesets de `dev`/`test`/`prod` y la configuración de Actions |
 
 ## Documentación
@@ -220,7 +229,7 @@ pre-commit install
 | --- | --- |
 | [FASES-DESARROLLO.md](FASES-DESARROLLO.md) | Orden de las fases, decisiones (E1–E3, T1–T7) y cuándo queda lista cada pregunta de la sustentación |
 | [docs/01-teoria-y-decisiones.md](docs/01-teoria-y-decisiones.md) | Registro de decisiones (ADR) y resultados de las pruebas de Floci |
-| `docs/02` … `docs/09` | Guías por fase con archivos, puntos de control y errores típicos |
+| [docs/03-fase-1-terraform.md](docs/03-fase-1-terraform.md) | Terraform: aislamiento por workspace, restauración del tfstate, recorrido del paquete |
 | `docs/10-qa.md` | Estrategia de pruebas y checklist por rúbrica |
 | `docs/11-roadmap-sustentacion.md` | Guion de la demo y respuestas al banco de preguntas |
 

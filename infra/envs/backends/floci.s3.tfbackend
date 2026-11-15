@@ -1,0 +1,19 @@
+# Backend para Floci (emulador local). Credenciales ficticias: Floci no las valida.
+bucket               = "aegisvolt-tfstate"
+key                  = "terraform.tfstate"
+workspace_key_prefix = "env:"
+region               = "us-east-1"
+encrypt              = true
+use_lockfile         = true # bloqueo nativo: escribe terraform.tfstate.tflock con If-None-Match
+
+access_key                  = "test"
+secret_key                  = "test"
+use_path_style              = true
+skip_credentials_validation = true
+skip_requesting_account_id  = true
+skip_metadata_api_check     = true
+skip_s3_checksum            = true
+
+endpoints = {
+  s3 = "http://localhost:4566"
+}
