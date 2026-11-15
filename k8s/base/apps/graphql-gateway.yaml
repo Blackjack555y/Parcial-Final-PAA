@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: graphql-gateway
+  labels:
+    app: graphql-gateway
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: graphql-gateway
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } # nunca baja de las réplicas pedidas
+  template:
+    metadata:
+      labels:
+        app: graphql-gateway
+    spec:
+      serviceAccountName: aegisvolt-app
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 20
+      securityContext: # requisitos de Pod Security "restricted"
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: app
+          image: aegisvolt/graphql-gateway:unset # la etiqueta real la fija scripts/deploy.sh
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: http, containerPort: 8080 }
+          envFrom:
+            - configMapRef: { name: aegisvolt-config }
+          env:
+            - name: AEGIS_SERVICE
+              value: graphql-gateway
+            - name: RESERVATION_URL
+              value: http://station-reservation-service
+            - name: BILLING_URL
+              value: http://billing-wallet-service
+            - name: DISPATCH_URL
+              value: http://energy-dispatch-service
+            - name: FLAGS_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef: { name: aegisvolt-admin, key: token, optional: true }
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 16Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: graphql-gateway
+  labels:
+    app: graphql-gateway
+spec:
+  type: ClusterIP
+  selector:
+    app: graphql-gateway
+  ports:
+    - { name: http, port: 80, targetPort: http }

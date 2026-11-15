@@ -41,6 +41,13 @@ jobs:
         run: docker run --rm -v "$PWD":/repo -w /repo rhysd/actionlint:1.7.12 -color
       - name: Esquema GraphQL al día (schema.graphql = código)
         run: python scripts/export_schema.py --check
+      - name: Manifiestos de Kubernetes (los 9 overlays renderizan)
+        run: |
+          for env in dev test prod; do
+            for o in "k8s/overlays/$env" "k8s/overlays/$env/canary"; do
+              kubectl kustomize "$o" > /dev/null && echo "✓ $o"
+            done
+          done
       - name: Docker Compose válido
         run: docker compose -f compose.yaml -f compose.apps.yaml config --quiet
       - name: Build de las 4 imágenes

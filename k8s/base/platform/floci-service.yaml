@@ -1,0 +1,11 @@
+# "floci" dentro del namespace: Service SIN selector. Su EndpointSlice (la IP del contenedor de
+# Floci en la red Docker "aegisvolt") lo crea scripts/deploy.sh. Los pods usan
+# AWS_ENDPOINT_URL=http://floci:4566. En EKS real esto no existe: se usan los endpoints de AWS
+# que resuelven a los VPC Endpoints de la VPC.
+apiVersion: v1
+kind: Service
+metadata:
+  name: floci
+spec:
+  ports:
+    - { name: http, port: 4566, targetPort: 4566, protocol: TCP }
