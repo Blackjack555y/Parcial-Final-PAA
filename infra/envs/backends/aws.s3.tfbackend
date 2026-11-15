@@ -1,0 +1,7 @@
+# Backend para AWS real. Credenciales por la cadena normal (perfil/SSO/OIDC); nunca en el repo.
+bucket               = "aegisvolt-tfstate" # en AWS real: nombre único global, p. ej. con el ID de cuenta
+key                  = "terraform.tfstate"
+workspace_key_prefix = "env:"
+region               = "us-east-1"
+encrypt              = true
+use_lockfile         = true
