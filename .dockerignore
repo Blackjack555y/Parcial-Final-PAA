@@ -1,0 +1,12 @@
+# Solo entra al contexto lo que las imágenes necesitan.
+**
+!libs/aegis_common/**
+!services/*/requirements.txt
+!services/*/*/**
+!services/graphql-gateway/schema.graphql
+!frontend/**
+**/__pycache__
+**/*.egg-info
+**/.pytest_cache
+frontend/node_modules
+frontend/dist

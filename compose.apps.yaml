@@ -1,0 +1,81 @@
+# Stack completo de AegisVolt (los 4 servicios) sobre Floci.
+# Se combina con compose.yaml:
+#   docker compose -f compose.yaml -f compose.apps.yaml up -d --build --wait
+#   (atajo: ./scripts/dev.sh up-apps [dev|test|prod])
+#
+# Solo el gateway publica un puerto (127.0.0.1:8000); los microservicios son internos a la red
+# "aegisvolt", igual que en Kubernetes (ClusterIP).
+
+x-service: &service
+  restart: unless-stopped
+  read_only: true # sistema de archivos de solo lectura
+  tmpfs: [/tmp]
+  cap_drop: [ALL] # sin capabilities de Linux
+  security_opt: ["no-new-privileges:true"]
+  networks: [aegisvolt]
+  depends_on:
+    floci:
+      condition: service_healthy
+  environment: &env
+    AEGIS_ENV: ${AEGIS_ENV:-dev}
+    AEGIS_CLOUDWATCH_LOGS: "true"
+    AWS_ENDPOINT_URL: http://floci:4566
+    AWS_ACCESS_KEY_ID: test
+    AWS_SECRET_ACCESS_KEY: test
+    AWS_DEFAULT_REGION: us-east-1
+    LOG_LEVEL: INFO
+
+services:
+  station-reservation-service:
+    <<: *service
+    image: aegisvolt/station-reservation-service:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: services/station-reservation-service/Dockerfile
+      args: { VERSION: "${IMAGE_TAG:-local}" }
+
+  billing-wallet-service:
+    <<: *service
+    image: aegisvolt/billing-wallet-service:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: services/billing-wallet-service/Dockerfile
+      args: { VERSION: "${IMAGE_TAG:-local}" }
+    environment:
+      <<: *env
+      PEAK_HOURS: ${PEAK_HOURS:-0-24}
+      PRICING_TZ: America/Bogota
+
+  energy-dispatch-service:
+    <<: *service
+    image: aegisvolt/energy-dispatch-service:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: services/energy-dispatch-service/Dockerfile
+      args: { VERSION: "${IMAGE_TAG:-local}" }
+
+  graphql-gateway:
+    <<: *service
+    image: aegisvolt/graphql-gateway:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: services/graphql-gateway/Dockerfile
+      args: { VERSION: "${IMAGE_TAG:-local}" }
+    ports:
+      - "127.0.0.1:8000:8080"
+    environment:
+      <<: *env
+      RESERVATION_URL: http://station-reservation-service:8080
+      BILLING_URL: http://billing-wallet-service:8080
+      DISPATCH_URL: http://energy-dispatch-service:8080
+      FLAGS_ADMIN_TOKEN: ${FLAGS_ADMIN_TOKEN:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+    depends_on:
+      floci:
+        condition: service_healthy
+      station-reservation-service:
+        condition: service_healthy
+      billing-wallet-service:
+        condition: service_healthy
+      energy-dispatch-service:
+        condition: service_healthy
