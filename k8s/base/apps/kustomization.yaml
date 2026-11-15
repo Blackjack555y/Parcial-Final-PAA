@@ -1,0 +1,17 @@
+# Una "pista" (track) completa de la aplicación: los 4 servicios + Ingress.
+# La pista estable usa esta base tal cual; la pista canary la reutiliza con sufijo "-canary".
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - graphql-gateway.yaml
+  - station-reservation-service.yaml
+  - billing-wallet-service.yaml
+  - energy-dispatch-service.yaml
+  - ingress.yaml
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: aegisvolt
+    includeTemplates: true # también en los pods: la NetworkPolicy de salida a AWS los elige así
+  - pairs:
+      track: stable
+    includeSelectors: true # stable y canary nunca comparten pods

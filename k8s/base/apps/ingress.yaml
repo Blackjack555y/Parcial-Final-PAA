@@ -1,0 +1,31 @@
+# Entrada HTTP/WSS al ambiente. En EKS: NLB interno (VPC Link de API Gateway) → este Ingress.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: graphql-gateway
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600" # suscripciones WebSocket largas
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-body-size: 64k
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: api.ENV.aegisvolt.local # cada overlay lo reemplaza
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: graphql-gateway
+                port: { name: http }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: graphql-gateway
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: graphql-gateway

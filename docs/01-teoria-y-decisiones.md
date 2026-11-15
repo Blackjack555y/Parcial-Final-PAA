@@ -19,7 +19,7 @@ Las pruebas se ejecutaron el 2026-11-14 con `./scripts/floci_smoke.sh` sobre Flo
 | F0-5 EKS `create-cluster` / `describe-cluster` | ✅ (plano de control) | Módulo `eks` real; los pods corren en minikube |
 | F0-6 Metric filter → métrica en CloudWatch | ✅ | **T4:** el canary usa el metric filter con dimensión `version` |
 | F0-7 `filter-log-events` con `{ $.correlation_id = "…" }` | ✅ Devuelve exactamente 1 evento | Trazabilidad por `correlation_id` (pregunta 6.4) |
-| F0-8 minikube → Floci | ⏳ Pendiente | Se ejecuta al instalar minikube (Fase 4) |
+| F0-8 minikube → Floci | ✅ (Fase 4) conectando Floci a la red Docker `minikube` | Service `floci` + EndpointSlice + NetworkPolicy de salida |
 
 **Conclusión:** no hace falta ningún plan B. Todas las piezas de AWS del proyecto existen en Floci,
 así que el mismo Terraform sirve para Floci y para AWS real.
@@ -112,7 +112,7 @@ Estado actual:
 | T1 | `terraform plan` en runner self-hosted | ✅ Fase 1: plan real del workspace destino, comentado en el PR |
 | T2 | Repo público | `scripts/setup_rulesets.sh` lo verifica antes de aplicar las reglas |
 | T3 | Endurecimiento frente a forks | `setup_rulesets.sh` exige aprobación para PR externos y token de solo lectura |
-| T4 | Canary con Ingress y metric filter | Confirmado por F0-6 |
+| T4 | Canary con Ingress y metric filter | ✅ Fase 4: reparto 80/20 medido, PROMOTE y ROLLBACK demostrados |
 | T5 | `use_lockfile` | Confirmado por F0-1 |
 | T6 | Nombres de los checks idénticos | `pr-checks.yml` / `promote-guard.yml` ↔ `protected-branches.json` |
 | T7 | Suscripciones GraphQL sobre WSS | ✅ Fase 2: `stations`, `sagas`, `featureFlags` con sondeo en el servidor |
@@ -253,3 +253,51 @@ Estado actual:
 - **Motivo:** las pruebas buscan conectores libres, usan `idempotencyKey` únicas, detienen las
   cargas que inician y restauran las flags al terminar. Por eso se pueden correr contra el `dev`
   local sin "ensuciarlo".
+
+---
+
+## Decisiones de la Fase 4 (Kubernetes y canary)
+
+### K1. Canary por pista completa, no por servicio
+
+- **Decisión:** la versión nueva se despliega como pista `-canary` de los 4 servicios. El gateway
+  canary solo llama a los servicios canary.
+- **Motivo:** una petición nunca mezcla versiones. Además, la métrica por `Version` mide la
+  versión completa.
+- **Costo aceptado:** durante el análisis hay 4 pods más.
+
+### K2. Peso exacto con ingress-nginx
+
+- **Decisión:** el peso se fija con `canary-weight`.
+- **Motivo:** la rúbrica pide "20 % del tráfico". La proporción de réplicas (4:1) solo aproxima
+  ese porcentaje. Medido: 80 % / 20 % (202/52).
+- **A tener en cuenta:** el proyecto ingress-nginx anunció su retiro. Las alternativas son Gateway
+  API (`HTTPRoute` con `weight`) o Argo Rollouts.
+
+### K3. Etiqueta de imagen = hash del código
+
+- **Decisión:** `git rev-parse HEAD:services HEAD:libs | sha256sum`.
+- **Motivo:** el mismo código produce la misma etiqueta. Así, la promoción dev → test → prod usa la
+  imagen idéntica ("build once") y un cambio solo de infraestructura no dispara un canary.
+
+### K4. Sin tráfico suficiente, se revierte
+
+- **Decisión:** con menos de 20 peticiones el análisis es inconcluso y se hace rollback.
+- **Motivo:** no se promueve lo que no se pudo medir. El script genera tráfico sintético de solo
+  lectura durante 60 s para que la medición sea posible.
+
+### K5. Calico como CNI
+
+- **Motivo:** el CNI por defecto de minikube no aplica NetworkPolicy. Con Calico, la política
+  deny-by-default se verificó con un pod ajeno que no llegó a billing.
+
+### K6. Floci conectado a la red de minikube, y no al revés
+
+- **Motivo:** conectar minikube a una segunda red Docker rompe su detección de IP
+  (`container addresses should have 2 values, got 3`).
+
+### K7. Etiquetas también en las plantillas de pod
+
+- **Contexto:** error real del ensayo. La NetworkPolicy de salida a AWS elige pods por
+  `app.kubernetes.io/part-of`. Kustomize `labels` no la copia a los pods sin `includeTemplates`,
+  así que los pods quedaban sin salida a Floci (timeout).

@@ -1,0 +1,17 @@
+# Pista de la aplicación en prod (la usan la pista estable y, con sufijo, la canary).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../../base/apps
+patches:
+  - target: { kind: Ingress }
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: api.prod.aegisvolt.local
+  # prod: 2 réplicas de cada microservicio (alta disponibilidad).
+  - target: { kind: Deployment, name: "(station-reservation|billing-wallet|energy-dispatch)-service" }
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 2

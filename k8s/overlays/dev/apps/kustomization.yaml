@@ -1,0 +1,11 @@
+# Pista de la aplicación en dev (la usan la pista estable y, con sufijo, la canary).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../../base/apps
+patches:
+  - target: { kind: Ingress }
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: api.dev.aegisvolt.local
