@@ -1,0 +1,25 @@
+# Cuota por namespace: un ambiente (p. ej. un canary descontrolado en dev) no puede agotar
+# los recursos del nodo que comparten test y prod.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: aegisvolt-quota
+spec:
+  hard:
+    pods: "20"
+    requests.cpu: "2"
+    requests.memory: 2Gi
+    limits.cpu: "8"
+    limits.memory: 5Gi
+---
+# Valores por defecto para cualquier contenedor que no declare recursos.
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: aegisvolt-limits
+spec:
+  limits:
+    - type: Container
+      defaultRequest: { cpu: 50m, memory: 96Mi }
+      default: { cpu: 500m, memory: 256Mi }
+      max: { cpu: "1", memory: 512Mi }

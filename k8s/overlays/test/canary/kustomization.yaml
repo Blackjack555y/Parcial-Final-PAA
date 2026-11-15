@@ -1,0 +1,46 @@
+# Pista CANARY de test: copia de la aplicación con sufijo "-canary", 1 réplica por servicio y
+# un Ingress canary cuyo peso (0 → 20 → 100) controla scripts/deploy.sh.
+# El gateway canary llama a los servicios canary: una petición nunca mezcla versiones.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: aegisvolt-test
+resources:
+  - ../apps
+nameSuffix: -canary
+labels:
+  - pairs:
+      track: canary
+    includeSelectors: true
+  - pairs:
+      aegisvolt/environment: test
+    includeTemplates: true
+patches:
+  - target: { kind: Deployment }
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+  - target: { kind: Deployment, name: "graphql-gateway.*" }
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/env/1/value
+        value: http://station-reservation-service-canary
+      - op: replace
+        path: /spec/template/spec/containers/0/env/2/value
+        value: http://billing-wallet-service-canary
+      - op: replace
+        path: /spec/template/spec/containers/0/env/3/value
+        value: http://energy-dispatch-service-canary
+  - target: { kind: Ingress }
+    patch: |-
+      - op: add
+        path: /metadata/annotations/nginx.ingress.kubernetes.io~1canary
+        value: "true"
+      - op: add
+        path: /metadata/annotations/nginx.ingress.kubernetes.io~1canary-weight
+        value: "0"
+  - target: { kind: PodDisruptionBudget }
+    patch: |-
+      - op: replace
+        path: /spec/minAvailable
+        value: 0

@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: station-reservation-service
+  labels:
+    app: station-reservation-service
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: station-reservation-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } # nunca baja de las réplicas pedidas
+  template:
+    metadata:
+      labels:
+        app: station-reservation-service
+    spec:
+      serviceAccountName: aegisvolt-app
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 20
+      securityContext: # requisitos de Pod Security "restricted"
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: app
+          image: aegisvolt/station-reservation-service:unset # la etiqueta real la fija scripts/deploy.sh
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: http, containerPort: 8080 }
+          envFrom:
+            - configMapRef: { name: aegisvolt-config }
+          env:
+            - name: AEGIS_SERVICE
+              value: station-reservation-service
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 16Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: station-reservation-service
+  labels:
+    app: station-reservation-service
+spec:
+  type: ClusterIP
+  selector:
+    app: station-reservation-service
+  ports:
+    - { name: http, port: 80, targetPort: http }

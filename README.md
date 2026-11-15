@@ -17,7 +17,7 @@ Proyecto final individual de **Patrones Arquitectónicos Avanzados**.
 | 1 | Terraform: S3 versionado, workspaces, VPC/VPCE, DynamoDB, EKS, API Gateway | ✅ Completada |
 | 2 | Microservicios, GraphQL, SAGA y feature flags | ✅ Completada |
 | 3 | Docker y pruebas reales en CI | ✅ Completada |
-| 4 | Kubernetes, canary y deploy por rama | Pendiente |
+| 4 | Kubernetes, canary y deploy por rama | ✅ Completada |
 | 5 | Prefect | Pendiente |
 | 6 | Frontend | Pendiente |
 | 7 | Release final, QA y ensayo | Pendiente |
@@ -217,6 +217,13 @@ python scripts/seed.py dev         # datos de demostración
 ./scripts/dev.sh up-apps dev       # build + 4 contenedores sin root, solo lectura
 ./scripts/dev.sh down-apps
 
+# Kubernetes (minikube, un namespace por ambiente) con despliegue canary
+minikube start --driver=docker --cpus=4 --memory=5g --cni=calico --addons=ingress --addons=metrics-server
+TAG=$(./scripts/deploy.sh image-tag)
+./scripts/deploy.sh build "$TAG"
+./scripts/deploy.sh dev "$TAG"     # canary 20 % → análisis en CloudWatch → 100 % o rollback
+./scripts/deploy.sh status dev
+
 # Calidad
 ./scripts/dev.sh lint
 ./scripts/dev.sh test all          # unit + integration + e2e
@@ -238,6 +245,7 @@ python scripts/seed.py dev         # datos de demostración
 | --- | --- |
 | [FASES-DESARROLLO.md](FASES-DESARROLLO.md) | Orden de las fases, decisiones (E1–E3, T1–T7) y cuándo queda lista cada pregunta de la sustentación |
 | [docs/01-teoria-y-decisiones.md](docs/01-teoria-y-decisiones.md) | Registro de decisiones (ADR) y resultados de las pruebas de Floci |
+| [docs/06-fase-4-kubernetes-canary.md](docs/06-fase-4-kubernetes-canary.md) | Kubernetes endurecido, NetworkPolicy, canary 20 % → 100 % y condición de promoción |
 | [docs/05-fase-3-docker-y-pruebas.md](docs/05-fase-3-docker-y-pruebas.md) | Imágenes endurecidas, Trivy y pirámide de pruebas (unit, integración, e2e) |
 | [docs/04-fase-2-backend.md](docs/04-fase-2-backend.md) | Esquema GraphQL, SAGA, idempotencia de compensaciones, flags y trazabilidad |
 | [docs/03-fase-1-terraform.md](docs/03-fase-1-terraform.md) | Terraform: aislamiento por workspace, restauración del tfstate, recorrido del paquete |

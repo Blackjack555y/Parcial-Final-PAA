@@ -1,0 +1,91 @@
+# Red "deny-by-default": todo está prohibido salvo lo que se permite explícitamente abajo.
+#
+#   ingress-nginx ──► graphql-gateway ──► station-reservation / billing-wallet / energy-dispatch
+#                                  │                         │
+#                                  └──────────► AWS (Floci) ◄┘   + DNS
+#
+# La regla de salida hacia AWS (IP de Floci, o IPs de los VPC Endpoints en EKS) la crea
+# scripts/deploy.sh porque depende de la red: NetworkPolicy "allow-aws-egress".
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+---
+# Solo el Ingress Controller puede llegar al gateway (puerta de entrada única).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-gateway
+spec:
+  podSelector:
+    matchLabels:
+      app: graphql-gateway
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - { protocol: TCP, port: 8080 }
+---
+# Los microservicios solo aceptan tráfico del gateway (nunca entre ellos ni desde afuera).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway-to-services
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [station-reservation-service, billing-wallet-service, energy-dispatch-service]
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: graphql-gateway
+      ports:
+        - { protocol: TCP, port: 8080 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway-egress-to-services
+spec:
+  podSelector:
+    matchLabels:
+      app: graphql-gateway
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values: [station-reservation-service, billing-wallet-service, energy-dispatch-service]
+      ports:
+        - { protocol: TCP, port: 8080 }

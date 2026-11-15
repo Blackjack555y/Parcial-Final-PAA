@@ -5,7 +5,7 @@
 #   github.ref_name (rama que recibió el merge) → TARGET_ENV → terraform workspace select TARGET_ENV
 # Un merge a "test" solo puede modificar el workspace "test" (estado env:/test/terraform.tfstate).
 #
-# Fase 4: después del apply se agrega el despliegue canary en Kubernetes.
+# Luego, deploy-k8s despliega la aplicación con estrategia canary (scripts/deploy.sh).
 name: deploy
 
 on:
@@ -65,5 +65,34 @@ jobs:
             echo "Versiones del tfstate \`env:/${TARGET_ENV}/terraform.tfstate\` en S3:"
             echo '```'
             ./scripts/tf.sh "$TARGET_ENV" versions
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-k8s:
+    name: deploy-k8s
+    # Después de la infraestructura: canary en el namespace aegisvolt-<rama>.
+    needs: terraform-apply
+    runs-on: [self-hosted, aegisvolt]
+    environment: ${{ github.ref_name }}
+    env:
+      TARGET_ENV: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Python 3.12 + boto3 (análisis del canary)
+        run: |
+          uv venv -q --python 3.12 .venv
+          uv pip install -q --python .venv/bin/python boto3==1.44.3
+      - name: Etiqueta de imagen = hash del código (misma imagen en dev, test y prod)
+        run: echo "IMAGE_TAG=$(./scripts/deploy.sh image-tag)" >> "$GITHUB_ENV"
+      - name: Build de las 4 imágenes
+        run: ./scripts/deploy.sh build "$IMAGE_TAG"
+      - name: Canary 20 % → análisis en CloudWatch → 100 % o rollback automático
+        run: ./scripts/deploy.sh "$TARGET_ENV" "$IMAGE_TAG"
+      - name: Estado final del ambiente
+        if: always()
+        run: |
+          {
+            echo '```'
+            ./scripts/deploy.sh status "$TARGET_ENV"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

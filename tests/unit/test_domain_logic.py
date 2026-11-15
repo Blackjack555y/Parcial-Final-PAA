@@ -135,3 +135,32 @@ async def test_internal_errors_are_masked():
     # Sin contexto, el resolver falla con un TypeError interno: el cliente no debe verlo.
     result = await build_schema(Environment.PROD).execute("{ sagas { sagaId } }")
     assert result.errors[0].message == "Unexpected error."
+
+
+# --- Inyección de fallos (demo del rollback del canary) ----------------------------------
+def test_chaos_injection_returns_500_and_spares_health(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from aegis_common.web import install
+
+    monkeypatch.setenv("CHAOS_ERROR_RATE", "1")
+    app = FastAPI()
+    install(app, logging.getLogger("chaos"))
+
+    @app.get("/ping")
+    def ping():
+        return {"ok": True}
+
+    client = TestClient(app)
+    assert client.get("/ping").status_code == 500
+    assert client.get("/healthz").status_code == 200  # el canary no muere por health checks
+
+
+def test_chaos_is_off_by_default(monkeypatch):
+    from aegis_common.web import _chaos_rate
+
+    monkeypatch.delenv("CHAOS_ERROR_RATE", raising=False)
+    assert _chaos_rate() == 0.0
+    monkeypatch.setenv("CHAOS_ERROR_RATE", "basura")
+    assert _chaos_rate() == 0.0
