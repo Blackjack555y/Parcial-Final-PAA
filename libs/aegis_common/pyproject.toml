@@ -4,10 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aegis-common"
-version = "0.1.0"
-description = "Utilidades compartidas de AegisVolt: configuración por ambiente, nombres de recursos"
+version = "0.2.0"
+description = "Librería común de AegisVolt: configuración, logs JSON, correlación, DynamoDB, flags"
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = [
+  "boto3>=1.44,<2",
+  "fastapi>=0.163,<1",
+]
 
 [tool.setuptools]
 packages = ["aegis_common"]

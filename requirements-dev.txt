@@ -1,5 +1,13 @@
 # Dependencias de desarrollo y CI (Python 3.12).
 -e ./libs/aegis_common
+# Dependencias de los servicios (mismas versiones que sus requirements.txt)
+fastapi==0.163.1
+uvicorn[standard]==0.54.0
+pydantic==2.14.3
+strawberry-graphql==0.341.2
+httpx==0.28.1
+tzdata==2026.6
+pytest-asyncio==1.5.0
 pytest==9.2.0
 ruff==0.17.5
 boto3==1.44.3

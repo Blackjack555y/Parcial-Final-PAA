@@ -1,0 +1,166 @@
+type ChargingSession {
+  sagaId: String!
+  status: String!
+  stationId: String!
+  connectorId: String!
+  powerKw: Float!
+  startedAt: String!
+  endedAt: String
+  failureReason: String
+}
+
+type Connector {
+  connectorId: String!
+  type: String!
+  powerKw: Float!
+  status: String!
+  reservedBy: String
+  fleetId: String
+}
+
+type EnvironmentInfo {
+  name: String!
+  version: String!
+  region: String!
+}
+
+type FeatureFlag {
+  name: String!
+  enabled: Boolean!
+  description: String!
+  updatedBy: String!
+  updatedAt: String!
+}
+
+type Mutation {
+  """Inicia la SAGA: reservar → cobrar → activar el cargador."""
+  reserveAndStartCharging(input: ReserveChargeInput!): SagaPayload!
+
+  """Detiene la carga y libera el conector."""
+  stopCharging(sagaId: String!): SagaPayload!
+
+  """Re-ejecuta las compensaciones (idempotentes). Admin."""
+  retryCompensation(sagaId: String!): SagaPayload!
+
+  """Cambia una feature flag de ESTE ambiente. Admin."""
+  setFeatureFlag(name: String!, enabled: Boolean!): FeatureFlag!
+
+  """Recarga saldo de una flota (demo). Admin."""
+  topUpWallet(fleetId: String!, amountCents: Int!): Wallet!
+}
+
+type Query {
+  """Ambiente al que está conectado este endpoint GraphQL."""
+  environment: EnvironmentInfo!
+  stations: [Station!]!
+  station(stationId: String!): Station!
+  wallet(fleetId: String!): Wallet!
+  quote(connectorType: String!, kwh: Float!): Quote!
+  sagas(limit: Int! = 20): [Saga!]!
+  saga(sagaId: String!): Saga
+  chargingSessions(status: String = null): [ChargingSession!]!
+  telemetry(sagaId: String!): Telemetry!
+  featureFlags: [FeatureFlag!]!
+}
+
+type Quote {
+  connectorType: String!
+  kwh: Float!
+  unitPriceCents: Int!
+  surgeActive: Boolean!
+  surgeMultiplier: Float!
+  amountCents: Int!
+}
+
+input ReserveChargeInput {
+  stationId: String!
+  connectorId: String!
+  fleetId: String!
+  kwh: Float!
+  idempotencyKey: String = null
+}
+
+type Saga {
+  sagaId: String!
+  status: String!
+  stationId: String!
+  connectorId: String!
+  fleetId: String!
+  kwh: Float!
+  correlationId: String
+  amountCents: Int
+  surgeActive: Boolean
+  failureReason: String
+  failureMessage: String
+  energyKwh: Float
+  createdAt: String!
+  updatedAt: String!
+  events: [SagaEvent!]!
+}
+
+type SagaEvent {
+  at: String!
+  step: String!
+  action: String!
+  outcome: String!
+  detail: String!
+}
+
+type SagaPayload {
+  success: Boolean!
+  message: String!
+  saga: Saga
+}
+
+type Station {
+  stationId: String!
+  name: String!
+  city: String!
+  address: String!
+  connectors: [Connector!]!
+  availableConnectors: Int!
+}
+
+type Subscription {
+  """Estado de estaciones y conectores en tiempo real."""
+  stations: [Station!]!
+
+  """Sagas recientes y sus compensaciones en tiempo real."""
+  sagas(limit: Int! = 20): [Saga!]!
+
+  """Feature flags del ambiente en tiempo real."""
+  featureFlags: [FeatureFlag!]!
+}
+
+type Telemetry {
+  sagaId: String!
+  status: String!
+  elapsedS: Float!
+  powerKw: Float!
+  energyKwh: Float!
+  socPercent: Float!
+  voltageV: Float!
+  currentA: Float!
+}
+
+type Transaction {
+  sagaId: String!
+  type: String!
+  status: String!
+  amountCents: Int!
+  kwh: Float!
+  unitPriceCents: Int!
+  surgeActive: Boolean!
+  connectorType: String!
+  createdAt: String!
+  refundedAt: String
+  refundReason: String
+}
+
+type Wallet {
+  fleetId: String!
+  name: String!
+  balanceCents: Int!
+  currency: String!
+  transactions: [Transaction!]!
+}
