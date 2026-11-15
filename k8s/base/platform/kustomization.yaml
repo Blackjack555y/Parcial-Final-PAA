@@ -1,0 +1,9 @@
+# Recursos de plataforma de cada namespace de ambiente (uno por ambiente, nunca duplicados
+# por el canary): identidad, red, cuotas y acceso a AWS.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - serviceaccount.yaml
+  - networkpolicy.yaml
+  - quota.yaml
+  - floci-service.yaml

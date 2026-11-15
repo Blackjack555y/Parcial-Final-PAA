@@ -1,0 +1,11 @@
+# Namespace del ambiente test. Pod Security "restricted": Kubernetes RECHAZA cualquier pod
+# que corra como root, permita escalar privilegios o no descarte capabilities.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aegisvolt-test
+  labels:
+    aegisvolt/environment: test
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted

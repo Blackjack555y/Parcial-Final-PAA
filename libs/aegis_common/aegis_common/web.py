@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import os
+import random
 import time
 from collections.abc import Callable
 
@@ -22,7 +24,20 @@ from aegis_common.logging import log_event, monotonic_ms
 _SKIP_LOG = {"/healthz", "/readyz"}  # los health checks no cuentan como tráfico (canary)
 
 
+def _chaos_rate() -> float:
+    """Inyección de fallos para demostrar el rollback del canary (0 = apagada, por defecto)."""
+    try:
+        return min(1.0, max(0.0, float(os.environ.get("CHAOS_ERROR_RATE", "0"))))
+    except ValueError:
+        return 0.0
+
+
 def install(app: FastAPI, logger: logging.Logger, ready_check: Callable[[], bool] | None = None):
+    chaos = _chaos_rate()
+    version = os.environ.get("AEGIS_VERSION", "dev-local")
+    if chaos:
+        log_event(logger, "chaos_enabled", level=logging.WARNING, error_rate=chaos)
+
     @app.middleware("http")
     async def correlation_and_access_log(request: Request, call_next):
         cid = request.headers.get(CORRELATION_HEADER) or new_correlation_id()
@@ -31,9 +46,15 @@ def install(app: FastAPI, logger: logging.Logger, ready_check: Callable[[], bool
         start = time.perf_counter()
         status = 500
         try:
-            response = await call_next(request)
+            if chaos and request.url.path not in _SKIP_LOG and random.random() < chaos:  # noqa: S311
+                response = JSONResponse(
+                    status_code=500, content={"error": "CHAOS", "message": "fallo inyectado"}
+                )
+            else:
+                response = await call_next(request)
             status = response.status_code
             response.headers[CORRELATION_HEADER] = cid
+            response.headers["X-Aegis-Version"] = version  # permite ver el reparto stable/canary
             return response
         finally:
             if request.url.path not in _SKIP_LOG:

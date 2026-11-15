@@ -1,0 +1,28 @@
+# Ambiente test: namespace + plataforma + pista estable.
+#   kubectl kustomize k8s/overlays/test   (lo aplica scripts/deploy.sh con la etiqueta de imagen)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: aegisvolt-test
+resources:
+  - namespace.yaml
+  - ../../base/platform
+  - apps
+labels:
+  - pairs:
+      aegisvolt/environment: test
+    includeTemplates: true
+configMapGenerator:
+  - name: aegisvolt-config
+    literals:
+      - AEGIS_ENV=test
+      - AEGIS_CLOUDWATCH_LOGS=true
+      - AWS_ENDPOINT_URL=http://floci:4566 # en EKS real: se omite (endpoints de AWS vía VPCE)
+      - AWS_DEFAULT_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=test # solo Floci; en EKS real: IRSA, sin credenciales estáticas
+      - AWS_SECRET_ACCESS_KEY=test
+      - PEAK_HOURS=0-24
+      - PRICING_TZ=America/Bogota
+      - LOG_LEVEL=INFO
+      - CORS_ORIGINS=http://app.test.aegisvolt.local,http://localhost:5173
+generatorOptions:
+  disableNameSuffixHash: true # la pista canary referencia el mismo ConfigMap por nombre
