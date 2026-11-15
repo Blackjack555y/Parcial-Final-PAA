@@ -1,0 +1,6 @@
+fastapi==0.163.1
+uvicorn[standard]==0.54.0
+pydantic==2.14.3
+boto3==1.44.3
+strawberry-graphql==0.341.2
+httpx==0.28.1

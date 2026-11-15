@@ -115,7 +115,7 @@ Estado actual:
 | T4 | Canary con Ingress y metric filter | Confirmado por F0-6 |
 | T5 | `use_lockfile` | Confirmado por F0-1 |
 | T6 | Nombres de los checks idénticos | `pr-checks.yml` / `promote-guard.yml` ↔ `protected-branches.json` |
-| T7 | Suscripciones GraphQL sobre WSS | Fase 2 |
+| T7 | Suscripciones GraphQL sobre WSS | ✅ Fase 2: `stations`, `sagas`, `featureFlags` con sondeo en el servidor |
 
 ---
 
@@ -165,3 +165,57 @@ Estado actual:
 - **PrivateLink:** Floci 2.4 no implementa `CreateVpcEndpointServiceConfiguration`. Se usa
   `enable_privatelink = false` en `floci.tfvars` y el recurso se crea en AWS real.
 - **EKS node group:** está desactivado en Floci porque los pods corren en minikube.
+
+---
+
+## Decisiones de la Fase 2 (backend)
+
+### B1. SAGA por orquestación dentro de la capa GraphQL
+
+- **Motivo:** el flujo es de 3 pasos y tiene que poder demostrarse y auditarse. Un orquestador
+  deja el estado de la saga en un solo lugar y fija el orden de las compensaciones.
+- **Alternativa descartada:** coreografía por eventos (SNS/SQS). Escala mejor con muchos
+  participantes, pero el flujo queda repartido en varios servicios y es más difícil de rastrear.
+
+### B2. El `saga_id` es la llave de idempotencia en los tres servicios
+
+- **Motivo:** cada escritura es condicional (`attribute_not_exists`, `status = CHARGED`,
+  `reserved_by = saga_id`). Así, repetir una acción o una compensación no repite su efecto.
+- **Consecuencia:** el orquestador puede reintentar las compensaciones con seguridad.
+
+### B3. `TransactWriteItems` dentro de cada servicio
+
+- **Motivo:** el cobro cambia la transacción y el saldo, y la reserva cambia el conector y su
+  registro. Cada par cambia junto o no cambia.
+- **Alcance:** es ACID **local** a un servicio. Entre servicios la consistencia es eventual,
+  mediante la SAGA.
+
+### B4. La tabla de flags es configuración transversal
+
+- **Motivo:** la tabla es "del ambiente", al estilo de AppConfig. Cada servicio lee la flag que
+  aplica, con caché de 5 s, y solo el gateway escribe en ella (con token).
+- **Por qué no duplicarla:** las flags son configuración, no datos de dominio de un servicio.
+  Duplicarlas por servicio rompería la regla de "un cambio, un lugar".
+
+### B5. Montos en centavos enteros
+
+- **Motivo:** nunca se usa `float` para dinero. El redondeo se hace con `Decimal` y `ROUND_HALF_UP`.
+
+### B6. Activar el conector (`occupy`) es de mejor esfuerzo
+
+- **Motivo:** cuando el cargador ya entrega energía, compensar (reembolsar y liberar) sería peor
+  que dejar una inconsistencia menor.
+- **Cómo se trata:** se registra en el log y la auditoría de Prefect la detecta (conector
+  `RESERVED` con una sesión `ACTIVE`).
+
+### B7. Suscripciones con sondeo en el servidor
+
+- **Motivo:** cada suscripción consulta DynamoDB cada 1,5 s y emite solo los cambios. Funciona con
+  N réplicas del gateway sin agregar un broker de pub/sub.
+
+### B8. Los campos fijos del log no se pueden sobrescribir
+
+- **Contexto:** un error real detectado en el ensayo. Un evento con `service=...` reemplazaba el
+  servicio emisor en la línea JSON.
+- **Decisión:** el formateador protege `service`, `env`, `version`, `correlation_id`, etc.
+  Las métricas por servicio dependen de ello.

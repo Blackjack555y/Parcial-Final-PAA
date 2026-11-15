@@ -15,7 +15,7 @@ Proyecto final individual de **Patrones Arquitectónicos Avanzados**.
 | --- | --- | --- |
 | 0 | Entorno, pruebas de Floci y gobernanza Git | ✅ Completada |
 | 1 | Terraform: S3 versionado, workspaces, VPC/VPCE, DynamoDB, EKS, API Gateway | ✅ Completada |
-| 2 | Microservicios, GraphQL, SAGA y feature flags | Pendiente |
+| 2 | Microservicios, GraphQL, SAGA y feature flags | ✅ Completada |
 | 3 | Docker y pruebas reales en CI | Pendiente |
 | 4 | Kubernetes, canary y deploy por rama | Pendiente |
 | 5 | Prefect | Pendiente |
@@ -208,6 +208,11 @@ pre-commit install
 ./scripts/tf.sh dev apply
 ./scripts/tf.sh dev versions       # historial del tfstate de dev en S3
 
+# Servicios (procesos locales contra las tablas de un ambiente)
+python scripts/seed.py dev         # datos de demostración
+./scripts/run_local.sh start dev   # gateway :8000 (GraphiQL en /graphql) + 3 servicios
+./scripts/run_local.sh stop
+
 # Calidad
 ./scripts/dev.sh lint
 ./scripts/dev.sh test all          # unit + integration + e2e
@@ -229,6 +234,7 @@ pre-commit install
 | --- | --- |
 | [FASES-DESARROLLO.md](FASES-DESARROLLO.md) | Orden de las fases, decisiones (E1–E3, T1–T7) y cuándo queda lista cada pregunta de la sustentación |
 | [docs/01-teoria-y-decisiones.md](docs/01-teoria-y-decisiones.md) | Registro de decisiones (ADR) y resultados de las pruebas de Floci |
+| [docs/04-fase-2-backend.md](docs/04-fase-2-backend.md) | Esquema GraphQL, SAGA, idempotencia de compensaciones, flags y trazabilidad |
 | [docs/03-fase-1-terraform.md](docs/03-fase-1-terraform.md) | Terraform: aislamiento por workspace, restauración del tfstate, recorrido del paquete |
 | `docs/10-qa.md` | Estrategia de pruebas y checklist por rúbrica |
 | `docs/11-roadmap-sustentacion.md` | Guion de la demo y respuestas al banco de preguntas |
