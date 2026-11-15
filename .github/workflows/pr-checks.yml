@@ -37,6 +37,8 @@ jobs:
           ruff format --check .
       - name: ShellCheck
         run: shellcheck scripts/*.sh
+      - name: actionlint (workflows)
+        run: docker run --rm -v "$PWD":/repo -w /repo rhysd/actionlint:1.7.12 -color
       - name: Docker Compose válido
         run: docker compose config --quiet
       # Fase 3: aquí se agrega el build de las imágenes y la validación del esquema GraphQL.
@@ -102,17 +104,74 @@ jobs:
 
   terraform-plan:
     name: terraform-plan
-    # Fase 0: fmt + validate en runner de GitHub (aún no hay estado).
-    # Fase 1: pasa al runner self-hosted y ejecuta plan contra el workspace de la rama destino (T1).
-    runs-on: ubuntu-latest
+    # T1: corre en el runner self-hosted porque necesita el tfstate REAL del ambiente destino
+    # (vive en el S3 de Floci de esta máquina). Un plan contra un Floci vacío no validaría nada.
+    # T3: los PR desde forks nunca llegan al runner self-hosted; corren en GitHub y fallan.
+    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","aegisvolt"]') || 'ubuntu-latest' }}
+    permissions:
+      contents: read
+      pull-requests: write # publicar el plan como comentario del PR
+    concurrency:
+      group: terraform-${{ github.base_ref }} # un plan a la vez por workspace
+      cancel-in-progress: false
     env:
-      TARGET_ENV: ${{ github.base_ref }}
+      TARGET_ENV: ${{ github.base_ref }} # la rama destino ES el workspace
+      SAME_REPO: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
     steps:
+      - name: Rechazar PR de forks
+        if: env.SAME_REPO != 'true'
+        run: |
+          echo "::error::Los PR desde forks no pueden ejecutar terraform plan sobre el estado real."
+          exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: 1.15.9
+          terraform_wrapper: false # el wrapper ensucia la salida de `terraform show -json`
       - name: terraform fmt
-        run: terraform fmt -check -recursive -diff
-      - name: Workspace destino
-        run: echo "PR hacia '${TARGET_ENV}' → workspace Terraform '${TARGET_ENV}'" >> "$GITHUB_STEP_SUMMARY"
+        run: terraform fmt -check -recursive -diff infra
+      - name: Floci disponible
+        run: curl -fs http://localhost:4566/_floci/health >/dev/null
+      - name: terraform plan (workspace = rama destino)
+        run: |
+          export TF_PLUGIN_CACHE_DIR="$HOME/.terraform.d/plugin-cache"
+          mkdir -p "$TF_PLUGIN_CACHE_DIR"
+          ./scripts/tf.sh "$TARGET_ENV" plan -out="$RUNNER_TEMP/tfplan" -no-color | tee "$RUNNER_TEMP/plan.txt"
+          (cd infra/envs && terraform show -json "$RUNNER_TEMP/tfplan") > "$RUNNER_TEMP/plan.json"
+      - name: Guardia de aislamiento entre ambientes
+        run: python3 scripts/check_plan_env.py "$TARGET_ENV" "$RUNNER_TEMP/plan.json" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Publicar el plan en el PR
+        if: always() && env.SAME_REPO == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          marker="<!-- terraform-plan:${TARGET_ENV} -->"
+          summary=$(grep -E '^(Plan:|No changes\.)' "$RUNNER_TEMP/plan.txt" | tail -1 || echo "Plan fallido")
+          {
+            echo "$marker"
+            echo "### Terraform plan · workspace \`${TARGET_ENV}\`"
+            echo "**${summary}**"
+            echo
+            echo "<details><summary>Plan completo</summary>"
+            echo
+            echo '```'
+            tail -c 60000 "$RUNNER_TEMP/plan.txt"
+            echo '```'
+            echo "</details>"
+          } > "$RUNNER_TEMP/comment.md"
+          id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate \
+               --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -1)
+          if [[ -n "$id" ]]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F body=@"$RUNNER_TEMP/comment.md" >/dev/null
+          else
+            gh pr comment "$PR" --body-file "$RUNNER_TEMP/comment.md"
+          fi
+          echo "$summary" >> "$GITHUB_STEP_SUMMARY"
+      - name: Guardar el plan
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tfplan-${{ github.base_ref }}-pr${{ github.event.pull_request.number }}
+          path: ${{ runner.temp }}/plan.txt
+          retention-days: 14

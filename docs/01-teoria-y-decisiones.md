@@ -109,10 +109,59 @@ Estado actual:
 
 | # | Decisión | Estado |
 | --- | --- | --- |
-| T1 | `terraform plan` en runner self-hosted | Fase 0: `fmt` en un runner de GitHub. Pasa a self-hosted en la Fase 1 |
+| T1 | `terraform plan` en runner self-hosted | ✅ Fase 1: plan real del workspace destino, comentado en el PR |
 | T2 | Repo público | `scripts/setup_rulesets.sh` lo verifica antes de aplicar las reglas |
 | T3 | Endurecimiento frente a forks | `setup_rulesets.sh` exige aprobación para PR externos y token de solo lectura |
 | T4 | Canary con Ingress y metric filter | Confirmado por F0-6 |
 | T5 | `use_lockfile` | Confirmado por F0-1 |
 | T6 | Nombres de los checks idénticos | `pr-checks.yml` / `promote-guard.yml` ↔ `protected-branches.json` |
 | T7 | Suscripciones GraphQL sobre WSS | Fase 2 |
+
+---
+
+## Decisiones de la Fase 1 (Terraform)
+
+### I1. El ambiente sale de `terraform.workspace`, no de una variable
+
+- **Motivo:** con una variable `env`, nada impide `-var env=prod` estando en el workspace `test`.
+  Así, el estado de `test` terminaría con recursos de `prod`.
+- **Decisión:** `local.env = terraform.workspace`, más un `precondition` que rechaza cualquier
+  workspace distinto de `dev`, `test` o `prod`.
+
+### I2. Una sola raíz con workspaces, no carpetas por ambiente
+
+- **Motivo:** la guía exige workspaces. Con una sola raíz, los tres ambientes son idénticos por
+  construcción. Las diferencias legítimas son mapas indexados por el ambiente:
+  - CIDR;
+  - retención de logs;
+  - valores iniciales de las flags;
+  - `deletion_protection` solo en `prod`.
+
+### I3. El estado del bootstrap también vive en el bucket
+
+- **Motivo:** ningún estado de Terraform queda solo en un disco local.
+- **Cómo:** la primera vez, `tf.sh` aplica con un backend local temporal y migra el estado a
+  `bootstrap/terraform.tfstate`. El bucket tiene `prevent_destroy`.
+
+### I4. Las flags se siembran con `ignore_changes`
+
+- **Motivo:** Terraform crea el valor inicial por ambiente. Después, los cambios en caliente (Fase 2)
+  no se revierten con el siguiente apply.
+
+### I5. Dos APIs por ambiente: pública (REGIONAL) e interna (PRIVATE)
+
+- **Motivo:** la guía pide VPCE hacia API Gateway. Una API `PRIVATE` solo es invocable a través del
+  VPCE `execute-api`, y su resource policy niega cualquier otro origen. La API `REGIONAL` es la
+  entrada del frontend. Ambas llegan al clúster por el mismo VPC Link → NLB interno.
+
+### I6. Health check HTTP en el NLB
+
+- **Motivo:** un chequeo TCP solo verifica que el puerto esté abierto. El chequeo HTTP a `/healthz`
+  saca de rotación un pod que acepta conexiones pero responde con errores. Además evita una
+  incompatibilidad de Floci con los atributos del target group TCP.
+
+### I7. Limitaciones de Floci
+
+- **PrivateLink:** Floci 2.4 no implementa `CreateVpcEndpointServiceConfiguration`. Se usa
+  `enable_privatelink = false` en `floci.tfvars` y el recurso se crea en AWS real.
+- **EKS node group:** está desactivado en Floci porque los pods corren en minikube.

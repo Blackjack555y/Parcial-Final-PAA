@@ -1,0 +1,69 @@
+# Despliegue post-merge. Se dispara con cada push a dev, test o prod, y por el ruleset ese push
+# solo puede ser el merge de un PR aprobado por los checks.
+#
+# Detección dinámica del ambiente:
+#   github.ref_name (rama que recibió el merge) → TARGET_ENV → terraform workspace select TARGET_ENV
+# Un merge a "test" solo puede modificar el workspace "test" (estado env:/test/terraform.tfstate).
+#
+# Fase 4: después del apply se agrega el despliegue canary en Kubernetes.
+name: deploy
+
+on:
+  push:
+    branches: [dev, test, prod]
+
+permissions:
+  contents: read
+
+# Un despliegue a la vez por ambiente; nunca se cancela uno en curso (dejaría el estado a medias).
+concurrency:
+  group: deploy-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  terraform-apply:
+    name: terraform-apply
+    runs-on: [self-hosted, aegisvolt]
+    # GitHub Environment con el nombre del ambiente: historial de despliegues por ambiente
+    # en la pestaña "Deployments" del repositorio.
+    environment: ${{ github.ref_name }}
+    env:
+      TARGET_ENV: ${{ github.ref_name }}
+    steps:
+      - name: Validar ambiente
+        run: |
+          case "$TARGET_ENV" in
+            dev | test | prod) echo "Ambiente destino: $TARGET_ENV" ;;
+            *) echo "::error::Rama no desplegable: $TARGET_ENV"; exit 1 ;;
+          esac
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.15.9
+          terraform_wrapper: false
+      - name: Floci disponible
+        run: curl -fs http://localhost:4566/_floci/health >/dev/null
+      - name: terraform plan
+        run: |
+          export TF_PLUGIN_CACHE_DIR="$HOME/.terraform.d/plugin-cache"
+          mkdir -p "$TF_PLUGIN_CACHE_DIR"
+          ./scripts/tf.sh "$TARGET_ENV" plan -out="$RUNNER_TEMP/tfplan" -no-color | tee "$RUNNER_TEMP/plan.txt"
+          (cd infra/envs && terraform show -json "$RUNNER_TEMP/tfplan") > "$RUNNER_TEMP/plan.json"
+      - name: Guardia de aislamiento entre ambientes
+        run: python3 scripts/check_plan_env.py "$TARGET_ENV" "$RUNNER_TEMP/plan.json"
+      - name: terraform apply -auto-approve
+        run: |
+          export TF_PLUGIN_CACHE_DIR="$HOME/.terraform.d/plugin-cache"
+          ./scripts/tf.sh "$TARGET_ENV" apply "$RUNNER_TEMP/tfplan" -no-color
+      - name: Resumen
+        run: |
+          {
+            echo "### Despliegue \`${TARGET_ENV}\` (commit ${GITHUB_SHA::7})"
+            echo
+            grep -E '^(Plan:|No changes\.)' "$RUNNER_TEMP/plan.txt" | tail -1
+            echo
+            echo "Versiones del tfstate \`env:/${TARGET_ENV}/terraform.tfstate\` en S3:"
+            echo '```'
+            ./scripts/tf.sh "$TARGET_ENV" versions
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
