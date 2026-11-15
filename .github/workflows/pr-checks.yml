@@ -42,8 +42,22 @@ jobs:
       - name: Esquema GraphQL al día (schema.graphql = código)
         run: python scripts/export_schema.py --check
       - name: Docker Compose válido
-        run: docker compose config --quiet
-      # Fase 3: aquí se agrega el build de las imágenes Docker.
+        run: docker compose -f compose.yaml -f compose.apps.yaml config --quiet
+      - name: Build de las 4 imágenes
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: docker compose -f compose.yaml -f compose.apps.yaml build --pull
+      - name: Trivy (sin vulnerabilidades HIGH/CRITICAL con parche disponible)
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          for svc in station-reservation-service billing-wallet-service energy-dispatch-service graphql-gateway; do
+            echo "::group::Trivy $svc"
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+              aquasec/trivy:0.76.2 image --quiet --severity HIGH,CRITICAL --ignore-unfixed \
+              --exit-code 1 "aegisvolt/$svc:$IMAGE_TAG"
+            echo "::endgroup::"
+          done
 
   unit-tests:
     name: unit-tests
@@ -84,25 +98,49 @@ jobs:
 
   e2e-tests:
     name: e2e-tests
+    # Ambiente efímero completo en el runner: Floci + infraestructura creada con el MISMO
+    # Terraform (workspace dev, estado local desechable) + datos de demo + 4 contenedores.
     runs-on: ubuntu-latest
     env:
       AWS_ENDPOINT_URL: http://localhost:4566
+      AEGIS_ENV: dev
+      E2E_ENV: dev
+      GATEWAY_URL: http://127.0.0.1:8000
+      IMAGE_TAG: ${{ github.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.15.9
+          terraform_wrapper: false
       - run: pip install -r requirements-dev.txt
-      - name: Levantar el stack (Fase 0 = Floci; Fase 3 = stack completo)
-        run: docker compose up -d --wait
-      - run: pytest tests/e2e
+      - name: Token admin efímero
+        run: echo "FLAGS_ADMIN_TOKEN=$(python -c 'import secrets; print(secrets.token_urlsafe(24))')" >> "$GITHUB_ENV"
+      - name: Floci
+        run: docker compose up -d --wait floci
+      - name: Infraestructura con Terraform (workspace dev, estado local efímero)
+        working-directory: infra/envs
+        run: |
+          printf 'terraform {\n  backend "local" {}\n}\n' > backend_override.tf
+          terraform init -input=false
+          terraform workspace select -or-create=true dev
+          terraform apply -input=false -auto-approve -var-file=floci.tfvars -no-color | tail -3
+      - name: Datos de demostración
+        run: python scripts/seed.py dev
+      - name: Stack de servicios (contenedores)
+        run: docker compose -f compose.yaml -f compose.apps.yaml up -d --build --wait
+      - name: Pruebas e2e (HTTP + WSS + CloudWatch)
+        run: pytest tests/e2e -v
       - name: Logs del stack si falla
         if: failure()
-        run: docker compose logs --no-color
+        run: docker compose -f compose.yaml -f compose.apps.yaml logs --no-color --tail 200
       - name: Bajar el stack
         if: always()
-        run: docker compose down -v
+        run: docker compose -f compose.yaml -f compose.apps.yaml down -v
 
   terraform-plan:
     name: terraform-plan
