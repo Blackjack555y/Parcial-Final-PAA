@@ -1,0 +1,4 @@
+# Configuración de actionlint (lint de workflows).
+self-hosted-runner:
+  labels:
+    - aegisvolt
