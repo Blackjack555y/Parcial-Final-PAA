@@ -39,9 +39,11 @@ jobs:
         run: shellcheck scripts/*.sh
       - name: actionlint (workflows)
         run: docker run --rm -v "$PWD":/repo -w /repo rhysd/actionlint:1.7.12 -color
+      - name: Esquema GraphQL al día (schema.graphql = código)
+        run: python scripts/export_schema.py --check
       - name: Docker Compose válido
         run: docker compose config --quiet
-      # Fase 3: aquí se agrega el build de las imágenes y la validación del esquema GraphQL.
+      # Fase 3: aquí se agrega el build de las imágenes Docker.
 
   unit-tests:
     name: unit-tests
