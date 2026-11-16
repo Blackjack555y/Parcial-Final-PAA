@@ -1,8 +1,9 @@
 const STATION_FIELDS = `stationId name city address availableConnectors
-  connectors { connectorId type powerKw status reservedBy fleetId }`;
+  connectors { connectorId type powerKw status reservedBy fleetId reservedUntil }`;
 const FLAG_FIELDS = "name enabled description updatedBy updatedAt";
 const SAGA_FIELDS = `sagaId status stationId connectorId fleetId kwh correlationId amountCents
-  surgeActive failureReason failureMessage energyKwh createdAt updatedAt`;
+  capturedCents releasedCents surgeActive failureReason failureMessage energyKwh arrivalDeadline
+  finishReason createdAt updatedAt`;
 const EVENT_FIELDS = "events { at step action outcome detail }";
 
 export const Q = {
@@ -12,12 +13,14 @@ export const Q = {
   sagas: `{ sagas(limit: 15) { ${SAGA_FIELDS} } }`,
   saga: `query($id: String!) { saga(sagaId: $id) { ${SAGA_FIELDS} ${EVENT_FIELDS} } }`,
   wallet: `query($f: String!) { wallet(fleetId: $f) {
-    fleetId name balanceCents currency
-    transactions { sagaId status amountCents kwh surgeActive createdAt refundReason } } }`,
+    fleetId name balanceCents heldCents currency
+    transactions { sagaId status amountCents capturedCents releasedCents kwh surgeActive
+      createdAt refundReason } } }`,
   quote: `query($t: String!, $k: Float!) { quote(connectorType: $t, kwh: $k) {
     unitPriceCents surgeActive surgeMultiplier amountCents } }`,
   sessions: `{ chargingSessions(status: "ACTIVE") { sagaId status stationId connectorId powerKw startedAt } }`,
-  telemetry: `query($id: String!) { telemetry(sagaId: $id) { status elapsedS powerKw energyKwh socPercent } }`,
+  telemetry: `query($id: String!) { telemetry(sagaId: $id) {
+    status elapsedS powerKw energyKwh socPercent targetKwh targetReached } }`,
 };
 
 export const S = {
@@ -30,6 +33,8 @@ export const M = {
   start: `mutation($i: ReserveChargeInput!) { reserveAndStartCharging(input: $i) {
     success message saga { ${SAGA_FIELDS} ${EVENT_FIELDS} } } }`,
   stop: `mutation($id: String!) { stopCharging(sagaId: $id) { success message saga { status energyKwh } } }`,
+  confirm: `mutation($id: String!) { confirmArrival(sagaId: $id) { success message saga { ${SAGA_FIELDS} } } }`,
+  cancel: `mutation($id: String!) { cancelReservation(sagaId: $id) { success message saga { status } } }`,
   setFlag: `mutation($n: String!, $e: Boolean!) { setFeatureFlag(name: $n, enabled: $e) { ${FLAG_FIELDS} } }`,
   retry: `mutation($id: String!) { retryCompensation(sagaId: $id) { success message saga { status } } }`,
 };

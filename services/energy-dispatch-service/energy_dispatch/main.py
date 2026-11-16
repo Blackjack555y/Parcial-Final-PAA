@@ -9,6 +9,7 @@ respuesta es 503 CHARGER_FAULT: el orquestador dispara entonces las compensacion
 from __future__ import annotations
 
 import logging
+import os
 from datetime import UTC, datetime
 from typing import Any
 
@@ -37,9 +38,10 @@ class StartRequest(BaseModel):
     target_kwh: float = Field(gt=0, le=500)
 
 
-def _elapsed(session: dict[str, Any]) -> float:
+def _elapsed(session: dict[str, Any], speedup: float) -> float:
+    """Segundos SIMULADOS de carga (tiempo real × factor de aceleración)."""
     started = datetime.fromisoformat(session["started_at"])
-    return (datetime.now(UTC) - started).total_seconds()
+    return (datetime.now(UTC) - started).total_seconds() * speedup
 
 
 def create_app(settings: Settings | None = None, flags: FlagStore | None = None) -> FastAPI:
@@ -47,6 +49,8 @@ def create_app(settings: Settings | None = None, flags: FlagStore | None = None)
     log = configure_logging(settings)
     repo = DispatchRepository(client("dynamodb", settings), settings.table("dispatch"))
     flags = flags or FlagStore(settings)
+    # Simulación acelerada (dev/test = 20): 30 kWh a 150 kW toman ~12 min reales y ~40 s en demo.
+    speedup = max(1.0, float(os.environ.get("CHARGING_SIMULATION_SPEEDUP", "1")))
 
     app = FastAPI(title=SERVICE, version=settings.version)
     install(app, log)
@@ -104,9 +108,10 @@ def create_app(settings: Settings | None = None, flags: FlagStore | None = None)
     def telemetry(saga_id: str) -> dict[str, Any]:
         session = repo.require_session(saga_id)
         if session["status"] == ACTIVE:
-            data = sample(
-                _elapsed(session), float(session["power_kw"]), float(session["target_kwh"])
-            ).as_dict()
+            target = float(session["target_kwh"])
+            data = sample(_elapsed(session, speedup), float(session["power_kw"]), target).as_dict()
+            data["target_kwh"] = target
+            data["target_reached"] = data["energy_kwh"] >= target - 1e-6
             repo.put_telemetry(saga_id, data)  # registro histórico (TTL 24 h)
         else:
             data = {
@@ -116,6 +121,8 @@ def create_app(settings: Settings | None = None, flags: FlagStore | None = None)
                 "soc_percent": 0.0,
                 "voltage_v": 0.0,
                 "current_a": 0.0,
+                "target_kwh": float(session.get("target_kwh", 0)),
+                "target_reached": session["status"] == "COMPLETED",
             }
         return {"saga_id": saga_id, "status": session["status"], **data}
 
@@ -125,7 +132,7 @@ def create_app(settings: Settings | None = None, flags: FlagStore | None = None)
         energy = 0.0
         if session["status"] == ACTIVE:
             energy = sample(
-                _elapsed(session), float(session["power_kw"]), float(session["target_kwh"])
+                _elapsed(session, speedup), float(session["power_kw"]), float(session["target_kwh"])
             ).energy_kwh
         result = repo.complete(saga_id, energy)
         log_event(log, "charging_stopped", energy_kwh=energy)

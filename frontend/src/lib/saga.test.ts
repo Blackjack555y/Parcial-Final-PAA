@@ -20,8 +20,38 @@ describe("buildTimeline", () => {
     ]);
     expect(nodes.map((n) => [n.label, n.state])).toEqual([
       ["Reservar", "ok"],
-      ["Cobrar", "ok"],
+      ["Retener saldo", "ok"],
       ["Activar", "ok"],
+    ]);
+  });
+
+  it("carga terminada: agrega el nodo de liquidación", () => {
+    const nodes = buildTimeline([
+      ev("reserve", "action", "OK"),
+      ev("charge", "action", "OK"),
+      ev("dispatch", "action", "OK"),
+      ev("dispatch", "stop", "OK"),
+      ev("charge", "capture", "OK", "captured_cents=1200, released_cents=600"),
+    ]);
+    expect(nodes.at(-1)).toMatchObject({ label: "Liquidar", kind: "settlement", state: "ok" });
+  });
+
+  it("reserva anticipada vencida: espera fallida y compensaciones", () => {
+    const nodes = buildTimeline([
+      ev("reserve", "action", "OK"),
+      ev("charge", "action", "OK"),
+      ev("arrival", "wait", "OK"),
+      ev("arrival", "wait", "FAILED", "reserva vencida sin llegada"),
+      ev("charge", "compensation", "OK"),
+      ev("reserve", "compensation", "OK"),
+    ]);
+    expect(nodes.map((n) => [n.label, n.state])).toEqual([
+      ["Reservar", "ok"],
+      ["Retener saldo", "ok"],
+      ["Esperar llegada", "failed"],
+      ["Activar", "skipped"],
+      ["Liberar saldo", "ok"],
+      ["Liberar bahía", "ok"],
     ]);
   });
 
@@ -34,8 +64,8 @@ describe("buildTimeline", () => {
       ev("reserve", "compensation", "OK"),
     ]);
     expect(nodes.filter((n) => n.kind === "compensation").map((n) => n.label)).toEqual([
-      "Reembolsar",
-      "Liberar",
+      "Liberar saldo",
+      "Liberar bahía",
     ]);
     expect(nodes.find((n) => n.step === "dispatch")?.state).toBe("failed");
   });
@@ -57,13 +87,19 @@ describe("buildTimeline", () => {
     ]);
     const comps = nodes.filter((n) => n.kind === "compensation");
     expect(comps.map((n) => [n.label, n.state])).toEqual([
-      ["Liberar", "ok"],
-      ["Reembolsar", "ok"],
+      ["Liberar bahía", "ok"],
+      ["Liberar saldo", "ok"],
     ]);
   });
 });
 
 describe("format", () => {
+  it("countdown", async () => {
+    const { countdown } = await import("./format");
+    const now = Date.parse("2026-11-16T12:00:00Z");
+    expect(countdown("2026-11-16T12:04:32Z", now)).toBe("4:32");
+    expect(countdown("2026-11-16T11:59:00Z", now)).toBe("vencida");
+  });
   it("money usa centavos enteros", () => {
     expect(money(2720)).toContain("27,20");
     expect(money(null)).toBe("—");

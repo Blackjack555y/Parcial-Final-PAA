@@ -160,7 +160,8 @@ button, input, select { font: inherit; color: inherit; }
 .chip[data-live="true"]::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: pulse 1.6s infinite; }
 
 /* --- Formularios ------------------------------------------------------------------ */
-.form { display: grid; gap: 14px; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: end; }
+.form { display: grid; gap: 14px; grid-template-columns: repeat(5, minmax(0, 1fr)); align-items: end; }
+@media (max-width: 1240px) { .form { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 760px) { .form { grid-template-columns: 1fr 1fr; } }
 .field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .field label { font-size: 12px; color: var(--muted); }
@@ -232,6 +233,7 @@ input[type="range"] { accent-color: var(--accent); width: 100%; }
 .node[data-state="failed"] { border-color: var(--danger); color: var(--danger); }
 .node[data-state="skipped"] { color: var(--faint); border-style: dashed; }
 .node[data-kind="compensation"] { border-style: dashed; }
+.node[data-kind="settlement"] { border-style: double; border-width: 3px; }
 .arrow { color: var(--faint); }
 .arrow[data-back="true"] { color: var(--warn); }
 
@@ -255,6 +257,7 @@ input[type="range"] { accent-color: var(--accent); width: 100%; }
 .result { margin-top: 14px; padding: 12px 14px; border-radius: var(--radius-sm); border: 1px solid; }
 .result[data-tone="ok"] { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 10%, transparent); }
 .result[data-tone="warn"] { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); }
+.result[data-tone="info"] { border-color: var(--info); background: color-mix(in srgb, var(--info) 10%, transparent); }
 .result[data-tone="danger"] { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
 .empty { color: var(--faint); font-size: 13px; padding: 8px 0; }
 .error-text { color: var(--danger); font-size: 12px; }

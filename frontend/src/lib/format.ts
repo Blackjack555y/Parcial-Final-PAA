@@ -1,4 +1,4 @@
-import type { SagaStatus } from "../api/types";
+import type { SagaStatus, TransactionStatus } from "../api/types";
 
 export type Tone = "ok" | "info" | "warn" | "danger" | "neutral";
 
@@ -23,6 +23,27 @@ export function timeAgo(iso: string | null | undefined, now: number = Date.now()
   return `hace ${Math.round(seconds / 86_400)} d`;
 }
 
+/** Cuenta regresiva "m:ss" hasta `iso`; "vencida" si ya pasó. */
+export function countdown(iso: string | null | undefined, now: number = Date.now()): string {
+  if (!iso) return "—";
+  const seconds = Math.round((new Date(iso).getTime() - now) / 1000);
+  if (seconds <= 0) return "vencida";
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+export function clock(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" });
+}
+
+export const TXN_STATUS: Record<TransactionStatus, { label: string; tone: Tone; icon: string }> = {
+  HELD: { label: "Retenido", tone: "info", icon: "⏸" },
+  CAPTURED: { label: "Liquidado", tone: "ok", icon: "✓" },
+  RELEASED: { label: "Liberado", tone: "warn", icon: "↩" },
+  CHARGED: { label: "Retenido", tone: "info", icon: "⏸" },
+  REFUNDED: { label: "Liberado", tone: "warn", icon: "↩" },
+};
+
 export const CONNECTOR_STATUS: Record<string, { label: string; tone: Tone; icon: string; live?: boolean }> = {
   AVAILABLE: { label: "Disponible", tone: "ok", icon: "●" },
   RESERVED: { label: "Reservado", tone: "info", icon: "◐", live: true },
@@ -33,7 +54,8 @@ export const CONNECTOR_STATUS: Record<string, { label: string; tone: Tone; icon:
 export const SAGA_STATUS: Record<SagaStatus, { label: string; tone: Tone; icon: string }> = {
   STARTED: { label: "Iniciada", tone: "info", icon: "…" },
   RESERVED: { label: "Reservada", tone: "info", icon: "…" },
-  CHARGED: { label: "Cobrada", tone: "info", icon: "…" },
+  CHARGED: { label: "Saldo retenido", tone: "info", icon: "…" },
+  AWAITING_ARRIVAL: { label: "Esperando vehículo", tone: "info", icon: "⏳" },
   COMPLETED: { label: "Cargando", tone: "ok", icon: "⚡" },
   FINISHED: { label: "Finalizada", tone: "neutral", icon: "✓" },
   FAILED: { label: "Rechazada", tone: "warn", icon: "⊘" },

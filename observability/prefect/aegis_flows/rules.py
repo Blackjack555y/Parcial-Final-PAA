@@ -20,6 +20,7 @@ from typing import Any
 IN_FLIGHT = {"STARTED", "RESERVED", "CHARGED", "COMPENSATING"}
 ROLLED_BACK = {"COMPENSATED", "FAILED"}
 OPEN_RESERVATION = {"RESERVED", "CHARGING"}
+MONEY_HELD = {"HELD", "CHARGED"}  # retención abierta (CHARGED = formato anterior)
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,21 +72,43 @@ def audit(snap: Snapshot, now: datetime | None = None, stuck_after_s: int = 120)
         # 2. Compensación que agotó sus reintentos.
         if status == "COMPENSATION_FAILED":
             pending = []
-            if charge and charge.get("status") == "CHARGED":
-                pending.append(f"{charge.get('amount_cents')} ¢ sin reembolsar")
+            if charge and charge.get("status") in MONEY_HELD:
+                pending.append(f"{charge.get('amount_cents')} ¢ retenidos sin liberar")
             if reservation and reservation.get("status") in OPEN_RESERVATION:
                 pending.append("conector retenido")
             detail = f"{saga.get('failure_reason') or ''}: {', '.join(pending) or 'revisar'}"
             add("CRITICAL", "compensacion_fallida", sid, detail)
 
-        # 3. Rollback "terminado" pero el dinero no volvió.
-        if status in ROLLED_BACK and charge and charge.get("status") == "CHARGED":
+        # 3. Rollback "terminado" pero la retención no se liberó.
+        if status in ROLLED_BACK and charge and charge.get("status") in MONEY_HELD:
             add(
                 "CRITICAL",
                 "cobro_sin_reembolso",
                 sid,
-                f"saga {status} y la transacción sigue CHARGED ({charge.get('amount_cents')} ¢)",
+                f"saga {status} y la retención sigue {charge.get('status')} "
+                f"({charge.get('amount_cents')} ¢)",
             )
+
+        # 3b. Carga terminada pero el cobro no se liquidó (la flota sigue con saldo retenido).
+        if status == "FINISHED" and charge and charge.get("status") in MONEY_HELD:
+            add(
+                "WARNING",
+                "retencion_sin_liquidar",
+                sid,
+                f"saga FINISHED y {charge.get('amount_cents')} ¢ siguen retenidos",
+            )
+
+        # 3c. Reserva anticipada vencida que nadie compensó (¿supervisor caído?).
+        deadline = saga.get("arrival_deadline")
+        if status == "AWAITING_ARRIVAL" and deadline:
+            overdue = (now - datetime.fromisoformat(deadline)).total_seconds()
+            if overdue > stuck_after_s:
+                add(
+                    "WARNING",
+                    "reserva_vencida_sin_compensar",
+                    sid,
+                    f"plazo vencido hace {int(overdue)} s y la saga sigue esperando",
+                )
 
         # 4. Rollback "terminado" pero el conector sigue bloqueado.
         held = reservation and reservation.get("status") in OPEN_RESERVATION
@@ -125,7 +148,7 @@ def audit(snap: Snapshot, now: datetime | None = None, stuck_after_s: int = 120)
                 "bloqueado por una saga inexistente",
             )
     for sid, charge in snap.charges.items():
-        if sid not in snap.sagas and charge.get("status") == "CHARGED":
+        if sid not in snap.sagas and charge.get("status") in MONEY_HELD:
             add("CRITICAL", "cobro_huerfano", sid, f"{charge.get('amount_cents')} ¢ sin saga")
     for sid, session in snap.sessions.items():
         if sid not in snap.sagas and session.get("status") == "ACTIVE":

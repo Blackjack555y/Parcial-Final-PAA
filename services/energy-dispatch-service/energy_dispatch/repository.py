@@ -126,7 +126,11 @@ class DispatchRepository:
                     "pk": f"SESSION#{saga_id}",
                     "sk": f"TELEMETRY#{ts.isoformat(timespec='milliseconds')}",
                     "expires_at": int(time.time()) + TELEMETRY_TTL_SECONDS,
-                    **{k: str(v) if isinstance(v, float) else v for k, v in data.items()},
+                    **{
+                        k: str(v) if isinstance(v, float) else v
+                        for k, v in data.items()
+                        if not isinstance(v, bool)
+                    },
                 }
             ),
         )

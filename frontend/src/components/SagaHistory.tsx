@@ -2,7 +2,8 @@ import { Fragment, useEffect, useState } from "react";
 import { getAdminToken, gql } from "../api/client";
 import { M, Q } from "../api/queries";
 import type { Saga } from "../api/types";
-import { money, SAGA_STATUS, shortId, timeAgo } from "../lib/format";
+import { useNow } from "../hooks/useLive";
+import { countdown, money, SAGA_STATUS, shortId, timeAgo } from "../lib/format";
 import { buildTimeline } from "../lib/saga";
 import { Chip, CopyButton, Panel } from "./ui";
 
@@ -14,7 +15,7 @@ function Timeline({ saga }: { saga: Saga }) {
         <Fragment key={n.key}>
           {i > 0 && (
             <span className="arrow" data-back={n.kind === "compensation"} aria-hidden="true">
-              {n.kind === "compensation" ? "↩" : "→"}
+              {n.kind === "compensation" ? "↩" : n.kind === "settlement" ? "⇒" : "→"}
             </span>
           )}
           <span className="node" data-state={n.state} data-kind={n.kind} title={n.detail}>
@@ -27,6 +28,7 @@ function Timeline({ saga }: { saga: Saga }) {
 }
 
 function SagaDetail({ sagaId }: { sagaId: string }) {
+  const now = useNow();
   const [saga, setSaga] = useState<Saga | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const load = () => gql<{ saga: Saga }>(Q.saga, { id: sagaId }).then((d) => setSaga(d.saga));
@@ -50,9 +52,28 @@ function SagaDetail({ sagaId }: { sagaId: string }) {
         </dd>
         <dt>Flota · energía</dt>
         <dd>
-          {saga.fleetId} · {saga.kwh} kWh · {money(saga.amountCents)}
+          {saga.fleetId} · {saga.kwh} kWh pedidos · retenido {money(saga.amountCents)}
           {saga.surgeActive ? " (tarifa pico)" : ""}
         </dd>
+        {saga.status === "FINISHED" && (
+          <>
+            <dt>Liquidación</dt>
+            <dd>
+              {saga.energyKwh} kWh entregados · cobrado <strong>{money(saga.capturedCents)}</strong> ·
+              liberado {money(saga.releasedCents)}
+              {saga.finishReason === "target_reached" ? " · cierre automático" : " · detenida por el operador"}
+            </dd>
+          </>
+        )}
+        {saga.arrivalDeadline && (
+          <>
+            <dt>Llegada</dt>
+            <dd>
+              plazo {new Date(saga.arrivalDeadline).toLocaleTimeString("es-CO")}
+              {saga.status === "AWAITING_ARRIVAL" && ` · vence en ${countdown(saga.arrivalDeadline, now)}`}
+            </dd>
+          </>
+        )}
         {saga.failureReason && (
           <>
             <dt>Motivo</dt>
@@ -74,6 +95,18 @@ function SagaDetail({ sagaId }: { sagaId: string }) {
           </Fragment>
         ))}
       </dl>
+      {saga.status === "AWAITING_ARRIVAL" && (
+        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+          <button className="btn btn-primary btn-sm" type="button"
+            onClick={() => void gql(M.confirm, { id: saga.sagaId }).then(() => load()).catch((e: Error) => setMessage(e.message))}>
+            🚚 Vehículo llegó · activar
+          </button>
+          <button className="btn btn-sm" type="button"
+            onClick={() => void gql(M.cancel, { id: saga.sagaId }).then(() => load()).catch((e: Error) => setMessage(e.message))}>
+            Cancelar reserva
+          </button>
+        </div>
+      )}
       {saga.status === "COMPENSATION_FAILED" && (
         <button
           className="btn btn-sm"
@@ -121,7 +154,8 @@ export function SagaHistory({ sagas, error, highlight }: { sagas: Saga[] | null;
                   {st.label}
                 </Chip>
                 <span className="saga-route muted">
-                  {s.stationId}/{s.connectorId} · {s.fleetId} · {money(s.amountCents)}
+                  {s.stationId}/{s.connectorId} · {s.fleetId} ·{" "}
+                  {s.status === "FINISHED" ? `cobrado ${money(s.capturedCents)}` : money(s.amountCents)}
                   {s.failureReason && <span className="mono faint"> · {s.failureReason}</span>}
                 </span>
                 <span className="saga-when faint">{timeAgo(s.createdAt)}</span>
