@@ -38,3 +38,7 @@ crash.log
 .DS_Store
 backend_override.tf
 .run/
+
+# Material personal de preparación de la sustentación (no se publica)
+docs/09-guia-de-estudio.md
+docs/11-roadmap-sustentacion.md

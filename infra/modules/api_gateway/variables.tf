@@ -28,3 +28,8 @@ variable "throttle_burst_limit" {
   type    = number
   default = 200
 }
+
+variable "backend_host" {
+  description = "Host del Ingress de este ambiente (api.<env>.aegisvolt.local)."
+  type        = string
+}

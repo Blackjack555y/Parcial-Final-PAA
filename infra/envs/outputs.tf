@@ -40,3 +40,8 @@ output "eks_cluster_name" {
 output "api_invoke_urls" {
   value = module.api_gateway.invoke_urls
 }
+
+output "api_rest_api_id" {
+  description = "API pública del ambiente (Floci: http://localhost:4566/restapis/<id>/<env>/_user_request_/graphql)."
+  value       = module.api_gateway.rest_api_id_public
+}

@@ -16,7 +16,9 @@ case "${1:-}" in
     for env in dev test prod; do
       pidfile="$RUN/ui-$env.pid"
       if [[ -f "$pidfile" ]] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then continue; fi
-      nohup kubectl port-forward -n "aegisvolt-$env" svc/frontend "${PORTS[$env]}:80" \
+      # port-forward se ata a UN pod: si un despliegue lo reemplaza, se corta. El bucle lo
+      # reabre solo (importante durante la demo, cuando el canary cambia pods).
+      nohup bash -c "while true; do kubectl port-forward -n aegisvolt-$env svc/frontend ${PORTS[$env]}:80; sleep 1; done" \
         >"$RUN/ui-$env.log" 2>&1 &
       echo $! >"$pidfile"
     done
@@ -31,7 +33,11 @@ case "${1:-}" in
     ;;
   stop)
     for env in dev test prod; do
-      [[ -f "$RUN/ui-$env.pid" ]] && kill "$(cat "$RUN/ui-$env.pid")" 2>/dev/null || true
+      if [[ -f "$RUN/ui-$env.pid" ]]; then
+        pid="$(cat "$RUN/ui-$env.pid")"
+        pkill -P "$pid" 2>/dev/null || true # el kubectl hijo del bucle
+        kill "$pid" 2>/dev/null || true
+      fi
       rm -f "$RUN/ui-$env.pid"
     done
     echo "Port-forwards detenidos"
