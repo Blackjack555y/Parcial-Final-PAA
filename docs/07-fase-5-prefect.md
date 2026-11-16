@@ -64,10 +64,12 @@ unitarias.
 | Regla | Severidad | Qué detecta |
 | --- | --- | --- |
 | `compensacion_fallida` | CRITICAL | Saga `COMPENSATION_FAILED`, indicando qué quedó pendiente (p. ej. "2040 ¢ sin reembolsar") |
-| `cobro_sin_reembolso` | CRITICAL | Saga revertida pero la transacción sigue `CHARGED` |
+| `cobro_sin_reembolso` | CRITICAL | Saga revertida pero la retención sigue `HELD`/`CHARGED` (no se liberó) |
 | `carga_sin_sesion` | CRITICAL | Saga `COMPLETED` pero la sesión no está `ACTIVE` |
 | `sesion_activa_huerfana` | CRITICAL | Cargador entregando energía sin una saga activa |
 | `cobro_huerfano` | CRITICAL | Cobro `CHARGED` sin saga en la bitácora |
+| `retencion_sin_liquidar` | WARNING | Saga `FINISHED` pero la retención sigue `HELD` (no se liquidó) |
+| `reserva_vencida_sin_compensar` | WARNING | `AWAITING_ARRIVAL` con el plazo vencido hace más de 120 s (¿supervisor caído?) |
 | `saga_atascada` | WARNING | Saga en curso (`STARTED`/`RESERVED`/`CHARGED`/`COMPENSATING`) hace más de 120 s |
 | `conector_retenido` | WARNING | Saga revertida o terminada pero la reserva sigue abierta |
 | `reserva_huerfana` | WARNING | Conector bloqueado por un `saga_id` inexistente |

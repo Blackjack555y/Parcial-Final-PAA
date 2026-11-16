@@ -2,11 +2,20 @@ import { useEffect, useMemo, useState } from "react";
 import { gql } from "../api/client";
 import { FLEETS, M, Q } from "../api/queries";
 import type { FeatureFlag, Quote, Saga, Station } from "../api/types";
-import { money } from "../lib/format";
+import { useNow } from "../hooks/useLive";
+import { clock, countdown, money } from "../lib/format";
 import { Loader } from "./Loader";
 import { Panel } from "./ui";
 
-type Result = { tone: "ok" | "warn" | "danger"; title: string; body: string; saga?: Saga };
+type Result = { tone: "ok" | "warn" | "danger" | "info"; title: string; body: string; saga?: Saga };
+
+const ARRIVALS = [
+  { value: 0, label: "Ya está en la bahía" },
+  { value: 1, label: "Llega en 1 min" },
+  { value: 2, label: "Llega en 2 min" },
+  { value: 5, label: "Llega en 5 min" },
+  { value: 10, label: "Llega en 10 min" },
+];
 
 export function ReservePanel({
   stations,
@@ -25,6 +34,8 @@ export function ReservePanel({
   const [stationId, setStationId] = useState("");
   const [connectorId, setConnectorId] = useState("");
   const [kwh, setKwh] = useState(30);
+  const [arrival, setArrival] = useState(0);
+  const now = useNow();
   const [quote, setQuote] = useState<Quote | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
@@ -78,18 +89,53 @@ export function ReservePanel({
             kwh,
             // Idempotencia de punta a punta: un doble clic o un reintento no cobra dos veces.
             idempotencyKey: crypto.randomUUID(),
+            arrivalMinutes: arrival,
           },
         },
       );
       const { saga, message } = data.reserveAndStartCharging;
       onSagaFinished(saga);
-      if (saga.status === "COMPLETED") {
-        setResult({ tone: "ok", title: "⚡ Carga activa", body: `Cobro de ${money(saga.amountCents)}`, saga });
-      } else if (saga.status === "COMPENSATED") {
+      showResult(saga, message);
+    } catch (e) {
+      setResult({ tone: "danger", title: "Error", body: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function showResult(saga: Saga, message: string) {
+    if (saga.status === "COMPLETED") {
+      setResult({
+        tone: "ok",
+        title: "⚡ Carga activa",
+        body: `Retenidos ${money(saga.amountCents)}; al terminar se cobra solo la energía entregada.`,
+        saga,
+      });
+    } else if (saga.status === "AWAITING_ARRIVAL") {
+      setResult({
+        tone: "info",
+        title: `⏳ Bahía reservada hasta las ${clock(saga.arrivalDeadline)}`,
+        body: `Saldo retenido: ${money(saga.amountCents)}. Si el vehículo no llega a tiempo, la reserva vence y se libera todo.`,
+        saga,
+      });
+    } else if (saga.status === "COMPENSATED") {
         setResult({ tone: "warn", title: "↩ Rollback distribuido completado", body: message, saga });
+    } else {
+      setResult({ tone: "danger", title: `SAGA ${saga.status}`, body: message, saga });
+    }
+  }
+
+  async function act(kind: "confirm" | "cancel", saga: Saga) {
+    setBusy(true);
+    try {
+      if (kind === "confirm") {
+        const d = await gql<{ confirmArrival: { message: string; saga: Saga } }>(M.confirm, { id: saga.sagaId });
+        showResult(d.confirmArrival.saga, d.confirmArrival.message);
       } else {
-        setResult({ tone: "danger", title: `SAGA ${saga.status}`, body: message, saga });
+        await gql(M.cancel, { id: saga.sagaId });
+        setResult({ tone: "warn", title: "↩ Reserva cancelada", body: "Se liberaron el saldo retenido y la bahía." });
       }
+      onSagaFinished(saga);
     } catch (e) {
       setResult({ tone: "danger", title: "Error", body: (e as Error).message });
     } finally {
@@ -98,7 +144,7 @@ export function ReservePanel({
   }
 
   return (
-    <Panel title="Reservar y activar carga" hint="SAGA: reservar → cobrar → activar">
+    <Panel title="Reservar y activar carga" hint="SAGA: reservar → retener saldo → activar">
       <div className="form">
         <div className="field">
           <label htmlFor="station">Estación</label>
@@ -145,6 +191,16 @@ export function ReservePanel({
           </select>
         </div>
         <div className="field">
+          <label htmlFor="arrival">Llegada del vehículo</label>
+          <select id="arrival" className="select" value={arrival} onChange={(e) => setArrival(Number(e.target.value))}>
+            {ARRIVALS.map((a) => (
+              <option key={a.value} value={a.value}>
+                {a.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
           <label htmlFor="kwh">Energía estimada: {kwh} kWh</label>
           <input id="kwh" type="range" min={5} max={80} step={5} value={kwh} onChange={(e) => setKwh(Number(e.target.value))} />
         </div>
@@ -152,7 +208,7 @@ export function ReservePanel({
 
       <div className="quote">
         <div>
-          <div className="muted" style={{ fontSize: 12 }}>Total estimado</div>
+          <div className="muted" style={{ fontSize: 12 }}>Se retiene (estimado)</div>
           <div className="quote-total">{money(quote?.amountCents)}</div>
         </div>
         <div className="muted" style={{ fontSize: 12 }}>
@@ -166,7 +222,7 @@ export function ReservePanel({
         </div>
         <span className="topbar-spacer" />
         <button className="btn btn-primary" type="button" disabled={!canStart} onClick={() => void start()}>
-          ⚡ Iniciar carga
+          {arrival > 0 ? "⏳ Reservar bahía" : "⚡ Iniciar carga"}
         </button>
       </div>
 
@@ -174,6 +230,17 @@ export function ReservePanel({
         <div className="result" data-tone={result.tone} role="status" aria-live="polite">
           <strong>{result.title}</strong>
           <div className="muted" style={{ fontSize: 13 }}>{result.body}</div>
+          {result.saga?.status === "AWAITING_ARRIVAL" && (
+            <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <button className="btn btn-primary btn-sm" type="button" disabled={busy} onClick={() => void act("confirm", result.saga!)}>
+                🚚 Vehículo llegó · activar
+              </button>
+              <button className="btn btn-sm" type="button" disabled={busy} onClick={() => void act("cancel", result.saga!)}>
+                Cancelar reserva
+              </button>
+              <span className="mono muted">vence en {countdown(result.saga.arrivalDeadline, now)}</span>
+            </div>
+          )}
           {result.saga?.correlationId && (
             <div className="mono faint" style={{ fontSize: 11, marginTop: 4 }}>
               {result.saga.sagaId} · {result.saga.correlationId}
@@ -188,8 +255,8 @@ export function ReservePanel({
             <Loader size={120} label="" />
             <strong>Ejecutando la SAGA…</strong>
             <span className="muted" style={{ fontSize: 13 }}>
-              Reservando conector, cobrando a la flota y activando el cargador. Si un paso falla se
-              ejecutan las compensaciones.
+              Reservando la bahía, reteniendo el saldo de la flota y activando el cargador. Si un
+              paso falla se ejecutan las compensaciones.
             </span>
           </div>
         </div>

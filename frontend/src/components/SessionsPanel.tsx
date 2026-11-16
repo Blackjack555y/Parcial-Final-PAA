@@ -37,7 +37,7 @@ function SessionCard({ session, onStopped }: { session: ChargingSession; onStopp
         </div>
         <div>
           <div className="metric-value">{t ? t.energyKwh.toFixed(2) : "—"}</div>
-          <div className="metric-label">kWh entregados</div>
+          <div className="metric-label">de {t ? t.targetKwh : "—"} kWh</div>
         </div>
         <div>
           <div className="metric-value">{t ? `${Math.round(t.elapsedS)} s` : "—"}</div>
@@ -49,6 +49,7 @@ function SessionCard({ session, onStopped }: { session: ChargingSession; onStopp
       </div>
       <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
         Batería {t ? `${t.socPercent.toFixed(1)} %` : "—"}
+        {t?.targetReached && " · energía pedida entregada: cerrando y liquidando…"}
       </div>
     </div>
   );

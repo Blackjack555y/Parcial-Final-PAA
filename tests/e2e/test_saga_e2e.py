@@ -104,10 +104,38 @@ def test_charger_fault_rolls_back_billing_and_reservation(gateway, unique_key):
     assert _balance(gateway) == before
     txns = gateway.gql(WALLET, {"f": "fleet-rapidoexpress"})["wallet"]["transactions"]
     txn = next(t for t in txns if t["sagaId"] == saga["sagaId"])
-    assert txn["status"] == "REFUNDED"
+    assert txn["status"] == "RELEASED"  # la retención se liberó (compensación del paso 2)
 
     # Trazabilidad: el correlation_id de la saga fallida está en CloudWatch (pregunta 6.4).
     _assert_in_cloudwatch(gateway.env, saga["correlationId"])
+
+
+def test_reservation_ahead_holds_the_bay_until_cancelled(gateway, unique_key):
+    before = _balance(gateway)
+    station, connector = gateway.free_connector()
+    data = gateway.gql(
+        START,
+        {
+            "i": {
+                "stationId": station,
+                "connectorId": connector,
+                "fleetId": "fleet-rapidoexpress",
+                "kwh": 20,
+                "idempotencyKey": unique_key,
+                "arrivalMinutes": 5,
+            }
+        },
+    )
+    saga = data["reserveAndStartCharging"]["saga"]
+    assert saga["status"] == "AWAITING_ARRIVAL"
+    assert _balance(gateway) == before - saga["amountCents"]  # saldo retenido
+
+    cancelled = gateway.gql(
+        "mutation($s: String!) { cancelReservation(sagaId: $s) { saga { status } } }",
+        {"s": saga["sagaId"]},
+    )
+    assert cancelled["cancelReservation"]["saga"]["status"] == "COMPENSATED"
+    assert _balance(gateway) == before  # retención liberada
 
 
 def test_insufficient_funds_releases_connector(gateway, unique_key):

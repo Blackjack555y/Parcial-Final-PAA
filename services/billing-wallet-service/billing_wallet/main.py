@@ -1,4 +1,10 @@
-"""billing-wallet-service: verificación de fondos, cobro y reembolso a la billetera de la flota."""
+"""billing-wallet-service: retención, liquidación y liberación de fondos de la flota.
+
+POST /holds                     paso 2 de la SAGA: retiene el monto estimado
+POST /holds/{saga}/release      compensación: libera la retención (idempotente)
+POST /holds/{saga}/capture      fin de la carga: cobra la energía real y libera el resto
+(alias anteriores: POST /charges = /holds · POST /charges/{saga}/refund = /release)
+"""
 
 from __future__ import annotations
 
@@ -29,9 +35,14 @@ class ChargeRequest(BaseModel):
     kwh: float = Field(gt=0, le=500)
 
 
-class RefundRequest(BaseModel):
+class ReleaseRequest(BaseModel):
     fleet_id: str = Field(pattern=ID)
     reason: str = Field(default="compensation", max_length=200)
+
+
+class CaptureRequest(BaseModel):
+    fleet_id: str = Field(pattern=ID)
+    energy_kwh: float = Field(ge=0, le=500)
 
 
 class TopUpRequest(BaseModel):
@@ -81,30 +92,47 @@ def create_app(settings: Settings | None = None, flags: FlagStore | None = None)
         log_event(log, "wallet_topped_up", fleet_id=fleet_id, amount_cents=body.amount_cents)
         return wallet
 
-    @app.post("/charges", status_code=201)
-    def charge(body: ChargeRequest) -> dict[str, Any]:
+    @app.post("/holds", status_code=201)
+    @app.post("/charges", status_code=201, include_in_schema=False)
+    def hold(body: ChargeRequest) -> dict[str, Any]:
         q = current_quote(body.connector_type, body.kwh)
-        txn = repo.charge(body.saga_id, body.fleet_id, q)
+        txn = repo.hold(body.saga_id, body.fleet_id, q)
         log_event(
             log,
-            "wallet_charged",
+            "funds_held",
             fleet_id=body.fleet_id,
             amount_cents=txn["amount_cents"],
             surge_active=txn.get("surge_active"),
         )
         return txn
 
-    @app.post("/charges/{saga_id}/refund")
-    def refund(saga_id: str, body: RefundRequest) -> dict[str, Any]:
+    @app.post("/holds/{saga_id}/release")
+    @app.post("/charges/{saga_id}/refund", include_in_schema=False)
+    def release(saga_id: str, body: ReleaseRequest) -> dict[str, Any]:
         """Compensación del paso 2. Idempotente."""
-        result = repo.refund(saga_id, body.fleet_id, body.reason)
+        result = repo.release(saga_id, body.fleet_id, body.reason)
         log_event(
             log,
-            "wallet_refunded",
+            "funds_released",
             fleet_id=body.fleet_id,
-            refunded=result["refunded"],
+            released=result["released"],
             detail=result.get("detail"),
             amount_cents=result.get("amount_cents"),
+        )
+        return result
+
+    @app.post("/holds/{saga_id}/capture")
+    def capture(saga_id: str, body: CaptureRequest) -> dict[str, Any]:
+        """Liquidación al terminar la carga: cobra lo entregado, devuelve la diferencia."""
+        result = repo.capture(saga_id, body.fleet_id, body.energy_kwh)
+        log_event(
+            log,
+            "funds_captured",
+            fleet_id=body.fleet_id,
+            energy_kwh=body.energy_kwh,
+            captured_cents=result.get("captured_cents"),
+            released_cents=result.get("released_cents"),
+            detail=result.get("detail"),
         )
         return result
 

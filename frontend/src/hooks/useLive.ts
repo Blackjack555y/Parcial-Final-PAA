@@ -93,3 +93,13 @@ export function usePolling<T>(
 
   return { data, error, refresh };
 }
+
+/** Hora actual que se actualiza cada `ms` (para cuentas regresivas). */
+export function useNow(ms = 1000): number {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), ms);
+    return () => clearInterval(timer);
+  }, [ms]);
+  return now;
+}

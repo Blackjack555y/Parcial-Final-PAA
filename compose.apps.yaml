@@ -24,6 +24,7 @@ x-service: &service
     AWS_SECRET_ACCESS_KEY: test
     AWS_DEFAULT_REGION: us-east-1
     LOG_LEVEL: INFO
+    CHARGING_SIMULATION_SPEEDUP: ${CHARGING_SIMULATION_SPEEDUP:-20}
 
 services:
   station-reservation-service:
