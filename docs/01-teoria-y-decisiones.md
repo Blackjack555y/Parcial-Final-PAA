@@ -345,3 +345,44 @@ Estado actual:
 - **Contexto:** problema real al reanudar. Floci arrancó antes que minikube y tomó la IP
   `192.168.49.2`, así que minikube no pudo iniciar ("Address already in use").
 - **Decisión:** con la IP fija, el orden de arranque deja de importar.
+
+---
+
+## Decisiones de la Fase 6 (frontend)
+
+### W1. La consola usa el mismo origen que su gateway
+
+- **Decisión:** nginx sirve la consola y reenvía `/graphql`, tanto HTTP como WSS, al gateway de su
+  namespace.
+- **Motivo:** no hace falta CORS para las queries ni hay URLs por ambiente dentro de la imagen; la
+  misma imagen sirve a los tres ambientes.
+- **Alternativa descartada:** `config.js` inyectado en tiempo de arranque. Obligaba a reescribir
+  archivos en un contenedor con sistema de archivos de solo lectura.
+
+### W2. El ambiente lo informa el gateway
+
+- **Decisión:** la query `environment` es la fuente de verdad del ambiente que se muestra.
+- **Motivo:** el distintivo DEV/TEST/PROD refleja a qué se conectó la consola, no lo que alguien
+  configuró.
+
+### W3. La consola solo vive en la pista estable
+
+- **Motivo:** la consola no lleva lógica de negocio. El canary mide el backend (errores 5xx por
+  versión) y la consola se actualiza al promover.
+
+### W4. WSS con respaldo de sondeo
+
+- **Motivo:** si el WebSocket cae, los paneles consultan por HTTP cada 3 s y el indicador cambia a
+  "Sondeo HTTP". La consola nunca muestra datos congelados sin avisarlo.
+
+### W5. Allowlist de `Origin` para WebSocket
+
+- **Contexto:** error real del ensayo, el navegador recibía 403.
+- **Decisión:** se mantiene la protección contra *Cross-Site WebSocket Hijacking* y se declaran los
+  orígenes válidos de cada ambiente en `CORS_ORIGINS`.
+
+### W6. CSP estricta sin `data:`
+
+- **Decisión:** fuentes autoalojadas y `assetsInlineLimit: 0`.
+- **Contexto:** error real del ensayo. Vite incrustaba fuentes como `data:` URIs y la CSP las
+  bloqueaba.

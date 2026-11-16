@@ -33,7 +33,7 @@ spec:
         - { protocol: UDP, port: 53 }
         - { protocol: TCP, port: 53 }
 ---
-# Solo el Ingress Controller puede llegar al gateway (puerta de entrada única).
+# Al gateway solo llegan el Ingress Controller y la consola web (que reenvía /graphql).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -48,6 +48,9 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: ingress-nginx
+        - podSelector:
+            matchLabels:
+              app: frontend
       ports:
         - { protocol: TCP, port: 8080 }
 ---
@@ -87,5 +90,30 @@ spec:
               - key: app
                 operator: In
                 values: [station-reservation-service, billing-wallet-service, energy-dispatch-service]
+      ports:
+        - { protocol: TCP, port: 8080 }
+---
+# Consola web: recibe tráfico solo del Ingress Controller y solo puede hablar con el gateway.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: frontend
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - { protocol: TCP, port: 8080 }
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: graphql-gateway
       ports:
         - { protocol: TCP, port: 8080 }
