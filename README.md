@@ -18,7 +18,7 @@ Proyecto final individual de **Patrones Arquitectónicos Avanzados**.
 | 2 | Microservicios, GraphQL, SAGA y feature flags | ✅ Completada |
 | 3 | Docker y pruebas reales en CI | ✅ Completada |
 | 4 | Kubernetes, canary y deploy por rama | ✅ Completada |
-| 5 | Prefect | Pendiente |
+| 5 | Prefect | ✅ Completada |
 | 6 | Frontend | Pendiente |
 | 7 | Release final, QA y ensayo | Pendiente |
 
@@ -224,6 +224,9 @@ TAG=$(./scripts/deploy.sh image-tag)
 ./scripts/deploy.sh dev "$TAG"     # canary 20 % → análisis en CloudWatch → 100 % o rollback
 ./scripts/deploy.sh status dev
 
+# Observabilidad (Prefect UI en http://127.0.0.1:4200)
+./scripts/dev.sh up-observability  # flujos de salud (5 min) y auditoría de la SAGA (10 min)
+
 # Calidad
 ./scripts/dev.sh lint
 ./scripts/dev.sh test all          # unit + integration + e2e
@@ -245,6 +248,7 @@ TAG=$(./scripts/deploy.sh image-tag)
 | --- | --- |
 | [FASES-DESARROLLO.md](FASES-DESARROLLO.md) | Orden de las fases, decisiones (E1–E3, T1–T7) y cuándo queda lista cada pregunta de la sustentación |
 | [docs/01-teoria-y-decisiones.md](docs/01-teoria-y-decisiones.md) | Registro de decisiones (ADR) y resultados de las pruebas de Floci |
+| [docs/07-fase-5-prefect.md](docs/07-fase-5-prefect.md) | Prefect: salud de ambientes, auditoría de la SAGA, detección y remediación |
 | [docs/06-fase-4-kubernetes-canary.md](docs/06-fase-4-kubernetes-canary.md) | Kubernetes endurecido, NetworkPolicy, canary 20 % → 100 % y condición de promoción |
 | [docs/05-fase-3-docker-y-pruebas.md](docs/05-fase-3-docker-y-pruebas.md) | Imágenes endurecidas, Trivy y pirámide de pruebas (unit, integración, e2e) |
 | [docs/04-fase-2-backend.md](docs/04-fase-2-backend.md) | Esquema GraphQL, SAGA, idempotencia de compensaciones, flags y trazabilidad |

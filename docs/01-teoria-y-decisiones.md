@@ -301,3 +301,47 @@ Estado actual:
 - **Contexto:** error real del ensayo. La NetworkPolicy de salida a AWS elige pods por
   `app.kubernetes.io/part-of`. Kustomize `labels` no la copia a los pods sin `includeTemplates`,
   así que los pods quedaban sin salida a Floci (timeout).
+
+---
+
+## Decisiones de la Fase 5 (Prefect)
+
+### O1. Prefect audita, no corrige por su cuenta
+
+- **Decisión:** la auditoría solo lee las tablas.
+- **Motivo:** la remediación es un deployment aparte, que se lanza a demanda y actúa por la **API
+  pública** del gateway (`retryCompensation`, con token admin). Nunca escribe directamente en las
+  tablas de un servicio, porque eso rompería Database-per-Service.
+
+### O2. Las reglas de auditoría son lógica pura
+
+- **Motivo:** `rules.py` no importa Prefect ni boto3, así que se prueba en milisegundos (10
+  pruebas). Los flujos solo orquestan lectura, reglas y artifacts.
+
+### O3. La salud se mide por la puerta de entrada real
+
+- **Motivo:** el flujo llega al gateway por el Ingress de cada ambiente
+  (`Host: api.<env>.aegisvolt.local`), no por un atajo interno. Si el Ingress o las
+  NetworkPolicy fallan, la salud lo refleja.
+
+### O4. Estado Failed como señal
+
+- **Motivo:** un flow run termina en Failed si hay ambientes `DOWN` o hallazgos CRITICAL sin
+  remediar. Así el dashboard de Prefect muestra en rojo lo que requiere atención, sin leer logs.
+
+### O5. FastAPI como extra opcional de `aegis_common`
+
+- **Motivo:** Prefect 3.9 fija `fastapi<0.151` y los servicios usan 0.163. Los flujos solo
+  necesitan la parte AWS de la librería; los servicios instalan `aegis-common[web]`.
+
+### O6. Fallas inyectadas por ruta (`CHAOS_PATH_REGEX`)
+
+- **Motivo:** permite provocar un fallo **real** de una sola operación (el reembolso) para
+  demostrar `COMPENSATION_FAILED`, su detección y su remediación sin fabricar datos. Está apagado
+  por defecto.
+
+### O7. IP fija de Floci en la red de minikube (`192.168.49.250`)
+
+- **Contexto:** problema real al reanudar. Floci arrancó antes que minikube y tomó la IP
+  `192.168.49.2`, así que minikube no pudo iniciar ("Address already in use").
+- **Decisión:** con la IP fija, el orden de arranque deja de importar.

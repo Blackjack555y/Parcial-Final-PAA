@@ -1,0 +1,65 @@
+# Observabilidad con Prefect: servidor (UI + API) y el proceso que ejecuta los flujos.
+#   docker compose -f compose.yaml -f compose.observability.yaml up -d --build --wait
+#   (atajo: ./scripts/dev.sh up-observability)   UI: http://127.0.0.1:4200
+#
+# prefect-flows se conecta a dos redes:
+#   aegisvolt → Floci (DynamoDB y CloudWatch de los 3 ambientes)
+#   minikube  → Ingress de Kubernetes (http://minikube con Host: api.<env>.aegisvolt.local)
+
+services:
+  prefect-server:
+    image: prefecthq/prefect:3.9.3-python3.12
+    container_name: aegisvolt-prefect-server
+    command: ["prefect", "server", "start", "--host", "0.0.0.0", "--port", "4200"]
+    environment:
+      PREFECT_UI_API_URL: http://127.0.0.1:4200/api # la UI corre en el navegador del host
+      PREFECT_SERVER_ANALYTICS_ENABLED: "false"
+      PREFECT_HOME: /data
+    volumes:
+      - prefect-data:/data # base SQLite: el historial de ejecuciones sobrevive reinicios
+    ports:
+      - "127.0.0.1:4200:4200"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4200/api/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+    networks: [aegisvolt]
+
+  prefect-flows:
+    image: aegisvolt/prefect-flows:${IMAGE_TAG:-local}
+    container_name: aegisvolt-prefect-flows
+    build:
+      context: .
+      dockerfile: observability/prefect/Dockerfile
+    environment:
+      PREFECT_API_URL: http://prefect-server:4200/api
+      AWS_ENDPOINT_URL: http://floci:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
+      INGRESS_URL: http://minikube
+      # Tokens admin solo para el deployment "con-remediacion" (scripts/dev.sh los inyecta).
+      ADMIN_TOKEN_DEV: ${ADMIN_TOKEN_DEV:-}
+      ADMIN_TOKEN_TEST: ${ADMIN_TOKEN_TEST:-}
+      ADMIN_TOKEN_PROD: ${ADMIN_TOKEN_PROD:-}
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      floci:
+        condition: service_healthy
+      prefect-server:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [aegisvolt, minikube]
+
+volumes:
+  prefect-data:
+
+networks:
+  minikube:
+    external: true # la crea minikube (driver docker)

@@ -7,7 +7,7 @@ FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb
 WORKDIR /build
 COPY services/billing-wallet-service/requirements.txt ./requirements.txt
 COPY libs/aegis_common ./libs/aegis_common
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt ./libs/aegis_common
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt "./libs/aegis_common[web]"
 
 # --- Etapa 2: runtime mínimo ---------------------------------------------------------
 FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
