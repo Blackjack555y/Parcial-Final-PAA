@@ -9,8 +9,12 @@ description = "Librería común de AegisVolt: configuración, logs JSON, correla
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "boto3>=1.44,<2",
-  "fastapi>=0.163,<1",
 ]
+
+[project.optional-dependencies]
+# Solo los microservicios usan aegis_common.web (FastAPI). Los flujos de Prefect no: Prefect
+# fija su propia versión de FastAPI y no deben chocar.
+web = ["fastapi>=0.163,<1"]
 
 [tool.setuptools]
 packages = ["aegis_common"]

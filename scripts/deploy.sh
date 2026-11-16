@@ -49,9 +49,11 @@ build() {
 ensure_cluster() {
   minikube status >/dev/null 2>&1 || { echo "minikube no está corriendo (minikube start)" >&2; exit 1; }
   kubectl config use-context minikube >/dev/null
-  # Floci se conecta TAMBIÉN a la red Docker de minikube: los pods llegan a Floci por esa IP.
-  # (Al revés —minikube en dos redes— rompe la detección de IP de minikube.)
-  docker network connect minikube aegisvolt-floci 2>/dev/null || true
+  # Floci se conecta TAMBIÉN a la red Docker de minikube con una IP FIJA, lejos de la .2 que
+  # minikube usa siempre: si Floci arranca primero no le "roba" la IP al nodo (error
+  # "Address already in use"). Al revés —minikube en dos redes— rompe la detección de IP.
+  docker network connect --ip "${FLOCI_MINIKUBE_IP:-192.168.49.250}" minikube aegisvolt-floci \
+    2>/dev/null || true
   FLOCI_IP="$(docker inspect aegisvolt-floci \
     --format '{{(index .NetworkSettings.Networks "minikube").IPAddress}}')"
   [[ -n "$FLOCI_IP" ]] || { echo "No se encontró la IP de Floci en la red minikube" >&2; exit 1; }

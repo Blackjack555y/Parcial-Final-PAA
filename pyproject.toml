@@ -24,6 +24,7 @@ select = [
 [tool.ruff.lint.isort]
 known-first-party = [
   "aegis_common", "station_reservation", "billing_wallet", "energy_dispatch", "graphql_gateway",
+  "aegis_flows",
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -36,6 +37,7 @@ pythonpath = [
   "services/billing-wallet-service",
   "services/energy-dispatch-service",
   "services/graphql-gateway",
+  "observability/prefect",
 ]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"

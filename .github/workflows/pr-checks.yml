@@ -49,16 +49,21 @@ jobs:
             done
           done
       - name: Docker Compose válido
-        run: docker compose -f compose.yaml -f compose.apps.yaml config --quiet
+        run: |
+          docker compose -f compose.yaml -f compose.apps.yaml config --quiet
+          docker network create minikube >/dev/null  # red externa que en local crea minikube
+          docker compose -f compose.yaml -f compose.observability.yaml config --quiet
       - name: Build de las 4 imágenes
         env:
           IMAGE_TAG: ${{ github.sha }}
-        run: docker compose -f compose.yaml -f compose.apps.yaml build --pull
+        run: |
+          docker compose -f compose.yaml -f compose.apps.yaml build --pull
+          docker build --pull -f observability/prefect/Dockerfile -t "aegisvolt/prefect-flows:$IMAGE_TAG" .
       - name: Trivy (sin vulnerabilidades HIGH/CRITICAL con parche disponible)
         env:
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          for svc in station-reservation-service billing-wallet-service energy-dispatch-service graphql-gateway; do
+          for svc in station-reservation-service billing-wallet-service energy-dispatch-service graphql-gateway prefect-flows; do
             echo "::group::Trivy $svc"
             docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
               aquasec/trivy:0.76.2 image --quiet --severity HIGH,CRITICAL --ignore-unfixed \
