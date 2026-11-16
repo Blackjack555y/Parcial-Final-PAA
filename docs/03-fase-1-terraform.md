@@ -100,6 +100,16 @@ terraform state push -force estado-anterior.tfstate   # alternativa desde Terraf
 
 ## Pregunta 6.1-c: recorrido de un paquete de API Gateway hasta el pod
 
+**Demostrable de punta a punta:** `./scripts/api.sh dev '{ environment { name version } }' -v`
+entra por la API `aegisvolt-dev-public` (stage `dev`) y responde el pod del gateway de `dev`, con su
+versión y su `correlation_id`.
+
+- **La integración** es `VPC_LINK` hacia el NLB interno, con
+  `uri = http://api.<env>.aegisvolt.local/{proxy}`. En AWS real, el hostname de la URI solo es el
+  `Host` que recibe el Ingress; el destino lo fija el VPC Link.
+- **En Floci**, ese hostname se resuelve a minikube (`extra_hosts` en `compose.yaml`). Es la misma
+  configuración de Terraform para los dos destinos.
+
 ```text
 Cliente
   │ HTTPS  https://<api-id>.execute-api.us-east-1.amazonaws.com/<env>/graphql

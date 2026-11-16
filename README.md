@@ -20,7 +20,7 @@ Proyecto final individual de **Patrones Arquitectónicos Avanzados**.
 | 4 | Kubernetes, canary y deploy por rama | ✅ Completada |
 | 5 | Prefect | ✅ Completada |
 | 6 | Frontend | ✅ Completada |
-| 7 | Release final, QA y ensayo | Pendiente |
+| 7 | Release final, QA y ensayo | ✅ Completada |
 
 ## Arquitectura
 
@@ -54,14 +54,21 @@ La SAGA es por orquestación: la dirige la capa GraphQL.
 
 | Paso | Servicio | Acción | Compensación |
 | --- | --- | --- | --- |
-| 1 | `station-reservation-service` | Conector → `RESERVED` | Conector → `AVAILABLE` |
-| 2 | `billing-wallet-service` | Descuenta el saldo estimado | Reembolsa y registra la reversión |
+| 1 | `station-reservation-service` | Conector → `RESERVED` (bloqueo **temporal**: vence solo) | Conector → `AVAILABLE` |
+| 2 | `billing-wallet-service` | **Retiene** el saldo estimado (`HELD`) | Libera la retención (`RELEASED`) |
 | 3 | `energy-dispatch-service` | Inicia el flujo eléctrico | — (último paso) |
+| Cierre | dispatch → billing → reservations | Detiene, **liquida la energía real** (`CAPTURED`) y libera la bahía | — |
+
+**Reserva anticipada (SAGA de larga duración):** con `arrivalMinutes > 0` se ejecutan los pasos 1
+y 2 y la saga espera la llegada del vehículo (`AWAITING_ARRIVAL`). Luego hay tres salidas:
+`confirmArrival` ejecuta el paso 3; `cancelReservation` compensa; y si vence el plazo, el
+supervisor compensa por **timeout**. Además, el supervisor cierra y liquida solas las cargas que
+alcanzan la energía pedida.
 
 **Qué se compensa según el paso que falla:**
 
-- **Falla el paso 3** (avería del cargador o `SIMULATE_CHARGER_HARDWARE_FAULT`): se reembolsa (paso 2)
-  y luego se libera el conector (paso 1).
+- **Falla el paso 3** (avería del cargador o `SIMULATE_CHARGER_HARDWARE_FAULT`): se libera la
+  retención (paso 2) y luego se libera el conector (paso 1).
 - **Falla el paso 2** (fondos insuficientes): se libera el conector (paso 1).
 
 **Idempotencia:** cada paso usa `saga_id` como llave junto con escrituras condicionales en DynamoDB.
@@ -232,6 +239,12 @@ TAG=$(./scripts/deploy.sh image-tag)
 ./scripts/ui.sh token dev          # X-Admin-Token para cambiar flags desde la consola
 cd frontend && npm install && npm run dev   # desarrollo (Vite :5173 → gateway :8000)
 
+# Día de la demo
+./scripts/demo.sh up               # levanta todo y muestra el semáforo
+./scripts/demo.sh reset-flags      # flags a su valor inicial
+./scripts/demo.sh check            # semáforo de cada punto a demostrar
+./scripts/api.sh dev '{ environment { name version } }' -v   # entra por API GATEWAY
+
 # Calidad
 ./scripts/dev.sh lint
 ./scripts/dev.sh test all          # unit + integration + e2e
@@ -244,6 +257,10 @@ cd frontend && npm install && npm run dev   # desarrollo (Vite :5173 → gateway
 | `./scripts/dev.sh status` | Estado de los contenedores y de Floci |
 | `./scripts/dev.sh test unit\|integration\|e2e\|all` | Pruebas; sin `.venv`, corren en un contenedor de Python 3.12 |
 | `./scripts/tf.sh <env> plan\|apply\|output\|versions\|restore` | Terraform con el workspace del ambiente seleccionado explícitamente |
+| `./scripts/deploy.sh <env> <tag> [--chaos 0.5]` | Despliegue canary en Kubernetes (`build`, `image-tag`, `status`) |
+| `./scripts/api.sh <env> '<query>' [--admin] [-v]` | GraphQL de un ambiente **entrando por API Gateway** |
+| `./scripts/ui.sh start\|stop\|token <env>` | Consolas web (dev :3001 · test :3002 · prod :3003) |
+| `./scripts/demo.sh up\|check\|reset-flags` | Kit del día de la demo |
 | `./scripts/setup_runner.sh` | Instala el runner self-hosted de GitHub Actions (servicio `systemd --user`) |
 | `./scripts/setup_rulesets.sh` | Aplica en GitHub los rulesets de `dev`/`test`/`prod` y la configuración de Actions |
 
@@ -253,13 +270,11 @@ cd frontend && npm install && npm run dev   # desarrollo (Vite :5173 → gateway
 | --- | --- |
 | [FASES-DESARROLLO.md](FASES-DESARROLLO.md) | Orden de las fases, decisiones (E1–E3, T1–T7) y cuándo queda lista cada pregunta de la sustentación |
 | [docs/01-teoria-y-decisiones.md](docs/01-teoria-y-decisiones.md) | Registro de decisiones (ADR) y resultados de las pruebas de Floci |
-| [docs/08-fase-6-frontend.md](docs/08-fase-6-frontend.md) | Consola web: paneles, despliegue same-origin, seguridad y demo de flags por ambiente |
-| [docs/07-fase-5-prefect.md](docs/07-fase-5-prefect.md) | Prefect: salud de ambientes, auditoría de la SAGA, detección y remediación |
-| [docs/06-fase-4-kubernetes-canary.md](docs/06-fase-4-kubernetes-canary.md) | Kubernetes endurecido, NetworkPolicy, canary 20 % → 100 % y condición de promoción |
-| [docs/05-fase-3-docker-y-pruebas.md](docs/05-fase-3-docker-y-pruebas.md) | Imágenes endurecidas, Trivy y pirámide de pruebas (unit, integración, e2e) |
-| [docs/04-fase-2-backend.md](docs/04-fase-2-backend.md) | Esquema GraphQL, SAGA, idempotencia de compensaciones, flags y trazabilidad |
 | [docs/03-fase-1-terraform.md](docs/03-fase-1-terraform.md) | Terraform: aislamiento por workspace, restauración del tfstate, recorrido del paquete |
-| `docs/10-qa.md` | Estrategia de pruebas y checklist por rúbrica |
-| `docs/11-roadmap-sustentacion.md` | Guion de la demo y respuestas al banco de preguntas |
-
-Los documentos de `docs/` se agregan con cada fase.
+| [docs/04-fase-2-backend.md](docs/04-fase-2-backend.md) | GraphQL, SAGA (retención, reserva anticipada, fin automático), idempotencia, flags y trazabilidad |
+| [docs/05-fase-3-docker-y-pruebas.md](docs/05-fase-3-docker-y-pruebas.md) | Imágenes endurecidas, Trivy y pruebas en CI |
+| [docs/06-fase-4-kubernetes-canary.md](docs/06-fase-4-kubernetes-canary.md) | Kubernetes endurecido, NetworkPolicy, canary 20 % → 100 % y condición de promoción |
+| [docs/07-fase-5-prefect.md](docs/07-fase-5-prefect.md) | Prefect: salud de ambientes, auditoría de la SAGA, detección y remediación |
+| [docs/08-fase-6-frontend.md](docs/08-fase-6-frontend.md) | Consola web: paneles, despliegue same-origin, seguridad y demo de flags por ambiente |
+| [docs/10-qa.md](docs/10-qa.md) | Pirámide de pruebas, matriz manual por ambiente y checklist de la rúbrica |
+| [docs/evidencias/](docs/evidencias/) | Capturas reales: flags dev vs prod, reserva con vencimiento, loader, Prefect |

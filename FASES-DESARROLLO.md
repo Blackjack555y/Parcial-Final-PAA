@@ -217,7 +217,7 @@ Resumen:
 | `08-fase-5-prefect.md` | 5 |
 | `09-fase-6-frontend.md` | 6 |
 | `10-qa.md` | 7 |
-| `11-roadmap-sustentacion.md` | 7 |
+| Guion de la sustentación y guía de estudio | 7 (material personal, fuera del repositorio) |
 
 Ya no hay un documento de investigación aparte. Las buenas prácticas y sus fuentes van en la sección
 "Teoría previa" de cada fase.
@@ -462,7 +462,7 @@ Cada prueba decide una alternativa del plan:
   - pruebas unitarias, de integración y e2e (con código);
   - matriz de pruebas manuales por ambiente;
   - checklist por rúbrica.
-- `11-roadmap-sustentacion.md`:
+- Guion de la sustentación (material personal, fuera del repositorio):
   - guion de la demo;
   - respuesta a cada pregunta del banco con su comando exacto;
   - respuestas preparadas sobre T4 (retiro de ingress-nginx) y T7 (WSS fuera de API Gateway);
