@@ -386,3 +386,40 @@ Estado actual:
 - **Decisión:** fuentes autoalojadas y `assetsInlineLimit: 0`.
 - **Contexto:** error real del ensayo. Vite incrustaba fuentes como `data:` URIs y la CSP las
   bloqueaba.
+
+---
+
+## Decisiones de las mejoras funcionales
+
+### F1. Retener y liquidar en vez de cobrar el estimado
+
+- **Motivo:** la guía habla de "autorizar retenciones de saldo".
+- **Cómo:** el paso 2 retiene y la liquidación cobra la energía **real**. Una carga interrumpida
+  ya no se cobra completa.
+- **Compatibilidad:** las transacciones `CHARGED`/`REFUNDED` antiguas se siguen aceptando.
+
+### F2. SAGA de larga duración para la reserva anticipada
+
+- **Fundamento:** las sagas nacieron para transacciones largas (Garcia-Molina y Salem, 1987).
+  Aquí la espera de la llegada del vehículo es un estado persistente (`AWAITING_ARRIVAL`) con un
+  plazo.
+- **Vencimiento:** el plazo vencido dispara una **compensación por timeout**.
+
+### F3. El vencimiento tiene doble mecanismo
+
+- **Orquestador (supervisor):** compensa la saga completa.
+- **Servicio de reservas:** libera la bahía por su cuenta, con un margen posterior.
+- **Motivo:** un componente caído no deja recursos bloqueados para siempre.
+
+### F4. Supervisor en el gateway, no en Prefect
+
+- **Motivo:** cerrar cargas y vencer reservas es lógica de negocio con latencia de segundos. Pertenece
+  al dueño de la saga, el orquestador.
+- **Rol de Prefect:** solo **audita**. Detecta si el supervisor falló (`reserva_vencida_sin_compensar`,
+  `retencion_sin_liquidar`).
+
+### F5. Simulación acelerada configurable
+
+- **Configuración:** `CHARGING_SIMULATION_SPEEDUP` por ambiente.
+- **Motivo:** la demo del fin automático dura segundos en dev y test, y prod conserva el tiempo
+  real.

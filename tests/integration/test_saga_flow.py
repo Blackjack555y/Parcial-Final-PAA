@@ -23,7 +23,12 @@ SET_FLAG = """
 mutation($n: String!, $e: Boolean!) { setFeatureFlag(name: $n, enabled: $e) { name enabled } }
 """
 RETRY = "mutation($s: String!) { retryCompensation(sagaId: $s) { success saga { status } } }"
-STOP = "mutation($s: String!) { stopCharging(sagaId: $s) { success saga { status energyKwh } } }"
+STOP = """mutation($s: String!) { stopCharging(sagaId: $s) {
+  success saga { status energyKwh capturedCents releasedCents } } }"""
+CONFIRM = "mutation($s: String!) { confirmArrival(sagaId: $s) { success saga { status } } }"
+CANCEL = "mutation($s: String!) { cancelReservation(sagaId: $s) { saga { status failureReason } } }"
+SAGA = """query($s: String!) { saga(sagaId: $s) {
+  status failureReason finishReason energyKwh capturedCents releasedCents } }"""
 
 
 def _input(fleet="fleet-rapidoexpress", connector="c1", station="bog-norte", **extra):
@@ -46,7 +51,7 @@ def _steps(saga):
     return [(e["step"], e["action"], e["outcome"]) for e in saga["events"]]
 
 
-async def test_happy_path_and_stop(platform):
+async def test_happy_path_holds_then_settles_real_energy(platform):
     p = platform
     before = await _balance(p)
     result = (await p.gql(START, _input()))["data"]["reserveAndStartCharging"]
@@ -54,18 +59,97 @@ async def test_happy_path_and_stop(platform):
 
     assert result["success"] is True
     assert saga["status"] == "COMPLETED"
-    assert saga["amountCents"] == 2720  # 40 kWh × 68 ¢ (tarifa pico activa en dev)
+    assert saga["amountCents"] == 2720  # RETENIDO: 40 kWh × 68 ¢ (tarifa pico activa en dev)
     assert saga["correlationId"].startswith("corr-")
-    assert await _balance(p) == before - 2720
+    assert await _balance(p) == before - 2720  # el saldo disponible baja por la retención
 
     sid = saga["sagaId"]
+    assert p.item("billing", "WALLET#fleet-rapidoexpress", f"TXN#{sid}")["status"] == "HELD"
     assert p.item("reservations", "STATION#bog-norte", "CONNECTOR#c1")["status"] == "CHARGING"
     assert p.item("dispatch", f"SESSION#{sid}")["status"] == "ACTIVE"
 
-    stopped = (await p.gql(STOP, {"s": sid}))["data"]["stopCharging"]
-    assert stopped["saga"]["status"] == "FINISHED"
+    stopped = (await p.gql(STOP, {"s": sid}))["data"]["stopCharging"]["saga"]
+    assert stopped["status"] == "FINISHED"
+    captured, released = stopped["capturedCents"], stopped["releasedCents"]
+    assert captured + released == 2720  # se cobra lo entregado y se libera el resto
+    assert captured == round(stopped["energyKwh"] * 68)
+    txn = p.item("billing", "WALLET#fleet-rapidoexpress", f"TXN#{sid}")
+    assert txn["status"] == "CAPTURED" and txn["captured_cents"] == captured
+    assert await _balance(p) == before - captured
     assert p.item("reservations", "STATION#bog-norte", "CONNECTOR#c1")["status"] == "AVAILABLE"
     assert p.item("reservations", f"RESERVATION#{sid}")["status"] == "COMPLETED"
+
+
+async def test_supervisor_finishes_the_charge_when_the_target_is_reached(platform):
+    p = platform
+    before = await _balance(p, "fleet-ultimamilla")
+    saga = (await p.gql(START, _input(fleet="fleet-ultimamilla", station="cali-sur")))["data"][
+        "reserveAndStartCharging"
+    ]["saga"]
+    assert saga["status"] == "COMPLETED"
+
+    import asyncio
+
+    for _ in range(20):  # simulación ×2000: 40 kWh se entregan en ~1 s
+        if (await p.supervisor.tick())["finished"]:
+            break
+        await asyncio.sleep(0.3)
+
+    done = (await p.gql(SAGA, {"s": saga["sagaId"]}))["data"]["saga"]
+    assert done["status"] == "FINISHED"
+    assert done["finishReason"] == "target_reached"
+    assert done["energyKwh"] == 40  # se entregó TODO lo pedido…
+    assert done["capturedCents"] == 2720 and done["releasedCents"] == 0  # …y se cobra todo
+    assert await _balance(p, "fleet-ultimamilla") == before - 2720
+    assert p.item("reservations", "STATION#cali-sur", "CONNECTOR#c1")["status"] == "AVAILABLE"
+
+
+async def test_reservation_ahead_then_arrival(platform):
+    p = platform
+    ahead = (await p.gql(START, _input(station="med-poblado", arrivalMinutes=5)))["data"][
+        "reserveAndStartCharging"
+    ]
+    saga = ahead["saga"]
+    sid = saga["sagaId"]
+    assert ahead["success"] is True and saga["status"] == "AWAITING_ARRIVAL"
+    connector = p.item("reservations", "STATION#med-poblado", "CONNECTOR#c1")
+    assert connector["status"] == "RESERVED" and connector["reserved_until"]
+    assert p.item("billing", "WALLET#fleet-rapidoexpress", f"TXN#{sid}")["status"] == "HELD"
+    assert p.item("dispatch", f"SESSION#{sid}") is None  # el cargador aún no se activa
+
+    arrived = (await p.gql(CONFIRM, {"s": sid}))["data"]["confirmArrival"]
+    assert arrived["saga"]["status"] == "COMPLETED"
+    assert p.item("reservations", "STATION#med-poblado", "CONNECTOR#c1")["status"] == "CHARGING"
+
+
+async def test_reservation_ahead_can_be_cancelled(platform):
+    p = platform
+    before = await _balance(p)
+    saga = (await p.gql(START, _input(station="cali-sur", connector="c2", arrivalMinutes=10)))[
+        "data"
+    ]["reserveAndStartCharging"]["saga"]
+    cancelled = (await p.gql(CANCEL, {"s": saga["sagaId"]}))["data"]["cancelReservation"]["saga"]
+
+    assert cancelled["status"] == "COMPENSATED"
+    assert cancelled["failureReason"] == "arrival:CANCELLED"
+    assert await _balance(p) == before  # retención liberada
+    assert p.item("reservations", "STATION#cali-sur", "CONNECTOR#c2")["status"] == "AVAILABLE"
+
+
+async def test_reservation_service_expires_bays_on_its_own(platform):
+    """Defensa en profundidad: aunque el orquestador no actúe, la bahía se libera sola."""
+    import time
+
+    p = platform
+    saga = (await p.gql(START, _input(connector="c2", arrivalMinutes=1)))["data"][
+        "reserveAndStartCharging"
+    ]["saga"]
+    assert p.item("reservations", "STATION#bog-norte", "CONNECTOR#c2")["status"] == "RESERVED"
+
+    expired = p.reservations_repo.expire_overdue(now=time.time() + 3600)
+    assert saga["sagaId"] in expired
+    assert p.item("reservations", "STATION#bog-norte", "CONNECTOR#c2")["status"] == "AVAILABLE"
+    assert p.item("reservations", f"RESERVATION#{saga['sagaId']}")["reason"] == "expired"
 
 
 async def test_charger_fault_compensates_billing_then_reservation(platform):
@@ -90,8 +174,8 @@ async def test_charger_fault_compensates_billing_then_reservation(platform):
     ]
     # Efecto en las tablas de cada servicio:
     txn = p.item("billing", "WALLET#fleet-rapidoexpress", f"TXN#{sid}")
-    assert txn["status"] == "REFUNDED" and txn["refund_reason"] == "dispatch:CHARGER_FAULT"
-    assert await _balance(p) == before  # saldo restituido
+    assert txn["status"] == "RELEASED" and txn["refund_reason"] == "dispatch:CHARGER_FAULT"
+    assert await _balance(p) == before  # retención liberada
     assert p.item("reservations", f"RESERVATION#{sid}")["status"] == "RELEASED"
     assert p.item("reservations", "STATION#bog-norte", "CONNECTOR#c2")["status"] == "AVAILABLE"
     assert p.item("dispatch", f"SESSION#{sid}")["status"] == "FAILED"
@@ -141,7 +225,7 @@ async def test_idempotency_key_charges_only_once(platform):
     s2 = second["data"]["reserveAndStartCharging"]["saga"]
 
     assert s1["sagaId"] == s2["sagaId"]
-    assert await _balance(p) == before - s1["amountCents"]  # un solo cobro
+    assert await _balance(p) == before - s1["amountCents"]  # una sola retención
 
 
 async def test_admin_mutations_require_token(platform):

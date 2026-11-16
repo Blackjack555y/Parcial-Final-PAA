@@ -16,6 +16,7 @@ type Connector {
   status: String!
   reservedBy: String
   fleetId: String
+  reservedUntil: String
 }
 
 type EnvironmentInfo {
@@ -35,6 +36,12 @@ type FeatureFlag {
 type Mutation {
   """Inicia la SAGA: reservar → cobrar → activar el cargador."""
   reserveAndStartCharging(input: ReserveChargeInput!): SagaPayload!
+
+  """Reserva anticipada: el vehículo llegó → activar el cargador."""
+  confirmArrival(sagaId: String!): SagaPayload!
+
+  """Cancela una reserva anticipada (libera saldo y bahía)."""
+  cancelReservation(sagaId: String!): SagaPayload!
 
   """Detiene la carga y libera el conector."""
   stopCharging(sagaId: String!): SagaPayload!
@@ -78,6 +85,7 @@ input ReserveChargeInput {
   fleetId: String!
   kwh: Float!
   idempotencyKey: String = null
+  arrivalMinutes: Int! = 0
 }
 
 type Saga {
@@ -89,10 +97,14 @@ type Saga {
   kwh: Float!
   correlationId: String
   amountCents: Int
+  capturedCents: Int
+  releasedCents: Int
   surgeActive: Boolean
   failureReason: String
   failureMessage: String
   energyKwh: Float
+  arrivalDeadline: String
+  finishReason: String
   createdAt: String!
   updatedAt: String!
   events: [SagaEvent!]!
@@ -141,6 +153,8 @@ type Telemetry {
   socPercent: Float!
   voltageV: Float!
   currentA: Float!
+  targetKwh: Float!
+  targetReached: Boolean!
 }
 
 type Transaction {
@@ -148,11 +162,15 @@ type Transaction {
   type: String!
   status: String!
   amountCents: Int!
+  capturedCents: Int
+  releasedCents: Int
+  energyKwh: Float
   kwh: Float!
   unitPriceCents: Int!
   surgeActive: Boolean!
   connectorType: String!
   createdAt: String!
+  closedAt: String
   refundedAt: String
   refundReason: String
 }
@@ -161,6 +179,7 @@ type Wallet {
   fleetId: String!
   name: String!
   balanceCents: Int!
+  heldCents: Int!
   currency: String!
   transactions: [Transaction!]!
 }

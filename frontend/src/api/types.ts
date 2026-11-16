@@ -13,6 +13,7 @@ export interface Connector {
   status: "AVAILABLE" | "RESERVED" | "CHARGING" | "FAULTED";
   reservedBy: string | null;
   fleetId: string | null;
+  reservedUntil: string | null;
 }
 
 export interface Station {
@@ -32,10 +33,14 @@ export interface FeatureFlag {
   updatedAt: string;
 }
 
+export type TransactionStatus = "HELD" | "CAPTURED" | "RELEASED" | "CHARGED" | "REFUNDED";
+
 export interface Transaction {
   sagaId: string;
-  status: "CHARGED" | "REFUNDED";
+  status: TransactionStatus;
   amountCents: number;
+  capturedCents: number | null;
+  releasedCents: number | null;
   kwh: number;
   surgeActive: boolean;
   createdAt: string;
@@ -46,6 +51,7 @@ export interface Wallet {
   fleetId: string;
   name: string;
   balanceCents: number;
+  heldCents: number;
   currency: string;
   transactions: Transaction[];
 }
@@ -69,6 +75,7 @@ export type SagaStatus =
   | "STARTED"
   | "RESERVED"
   | "CHARGED"
+  | "AWAITING_ARRIVAL"
   | "COMPLETED"
   | "FINISHED"
   | "FAILED"
@@ -85,10 +92,14 @@ export interface Saga {
   kwh: number;
   correlationId: string | null;
   amountCents: number | null;
+  capturedCents: number | null;
+  releasedCents: number | null;
   surgeActive: boolean | null;
   failureReason: string | null;
   failureMessage: string | null;
   energyKwh: number | null;
+  arrivalDeadline: string | null;
+  finishReason: string | null;
   createdAt: string;
   updatedAt: string;
   events: SagaEvent[];
@@ -109,4 +120,6 @@ export interface Telemetry {
   powerKw: number;
   energyKwh: number;
   socPercent: number;
+  targetKwh: number;
+  targetReached: boolean;
 }

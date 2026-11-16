@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import os
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI
@@ -26,6 +30,7 @@ class ReserveRequest(BaseModel):
     station_id: str = Field(pattern=ID)
     connector_id: str = Field(pattern=ID)
     fleet_id: str = Field(pattern=ID)
+    hold_seconds: int = Field(default=120, ge=30, le=3600)  # vencimiento del bloqueo
 
 
 class ReleaseRequest(BaseModel):
@@ -38,7 +43,27 @@ def create_app(settings: Settings | None = None, flags: FlagStore | None = None)
     repo = ReservationRepository(client("dynamodb", settings), settings.table("reservations"))
     flags = flags or FlagStore(settings)
 
-    app = FastAPI(title=SERVICE, version=settings.version)
+    sweep_every = float(os.environ.get("RESERVATION_SWEEP_SECONDS", "15"))
+
+    async def sweeper() -> None:
+        """Libera periódicamente las reservas vencidas (bloqueo temporal)."""
+        while True:
+            await asyncio.sleep(sweep_every)
+            try:
+                for saga_id in await asyncio.to_thread(repo.expire_overdue):
+                    log_event(log, "reservation_expired", saga_id_field=saga_id)
+            except Exception as exc:  # noqa: BLE001 — el barrido nunca debe tumbar el servicio
+                log_event(log, "reservation_sweep_failed", level=40, error=str(exc)[:200])
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        task = asyncio.create_task(sweeper())
+        yield
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+    app = FastAPI(title=SERVICE, version=settings.version, lifespan=lifespan)
     install(app, log)
 
     @app.get("/stations")
@@ -57,7 +82,9 @@ def create_app(settings: Settings | None = None, flags: FlagStore | None = None)
                 "La ultra-carga (350 kW) requiere ENABLE_FAST_CHARGE_BOOST",
                 code="FAST_CHARGE_DISABLED",
             )
-        reservation = repo.reserve(body.saga_id, body.station_id, body.connector_id, body.fleet_id)
+        reservation = repo.reserve(
+            body.saga_id, body.station_id, body.connector_id, body.fleet_id, body.hold_seconds
+        )
         log_event(
             log,
             "connector_reserved",
@@ -97,6 +124,11 @@ def create_app(settings: Settings | None = None, flags: FlagStore | None = None)
             reason=body.reason,
         )
         return result
+
+    @app.post("/reservations/expire", include_in_schema=False)
+    def expire_now() -> dict[str, Any]:
+        """Ejecuta el barrido de vencimientos a demanda (pruebas y operación)."""
+        return {"expired": repo.expire_overdue()}
 
     @app.post("/reservations/{saga_id}/complete")
     def complete(saga_id: str) -> dict[str, Any]:

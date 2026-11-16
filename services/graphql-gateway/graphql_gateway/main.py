@@ -16,6 +16,8 @@ Protecciones del esquema:
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import os
 from contextlib import asynccontextmanager
 from typing import Any
@@ -42,6 +44,7 @@ from aegis_common.web import install
 from graphql_gateway.clients import ServiceClients
 from graphql_gateway.saga.orchestrator import SagaOrchestrator
 from graphql_gateway.saga.repository import SagaRepository
+from graphql_gateway.saga.supervisor import SagaSupervisor
 from graphql_gateway.schema import Mutation, Query, Subscription, UserError
 
 SERVICE = "graphql-gateway"
@@ -88,9 +91,21 @@ def create_app(
             "log": log,
         }
 
+    supervisor = SagaSupervisor(
+        orchestrator, log, interval=float(os.environ.get("SUPERVISOR_INTERVAL_SECONDS", "5"))
+    )
+
     @asynccontextmanager
     async def lifespan(_: FastAPI):
+        # Supervisor de sagas de larga duración: vencimientos y fin automático de cargas.
+        task = None
+        if os.environ.get("SUPERVISOR_ENABLED", "true").lower() == "true":
+            task = asyncio.create_task(supervisor.run())
         yield
+        if task:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
         await clients.aclose()
 
     app = FastAPI(title=SERVICE, version=settings.version, lifespan=lifespan)
@@ -127,5 +142,6 @@ def create_app(
     )
     app.include_router(router, prefix="/graphql")
     app.state.orchestrator = orchestrator
+    app.state.supervisor = supervisor
     app.state.clients = clients
     return app

@@ -64,6 +64,15 @@ El archivo completo está en [schema.graphql](../services/graphql-gateway/schema
 
 ## La SAGA "Reservar y activar carga" (orquestación)
 
+> **Actualización (mejoras funcionales):**
+> - El paso 2 **retiene** el saldo (`HELD`) en lugar de cobrarlo. Al terminar se **liquida** solo la
+>   energía real (`CAPTURED`) y se devuelve la diferencia.
+> - La reserva tiene **vencimiento** y puede hacerse **por adelantado**: la SAGA es de larga
+>   duración, con compensación por timeout.
+> - Un **supervisor** cierra las cargas que alcanzaron la energía pedida.
+>
+> Detalle en la sección [Retención, reserva anticipada y fin automático](#retención-reserva-anticipada-y-fin-automático).
+
 ```text
 graphql-gateway (orquestador)
    │ 1. POST /reservations            → conector AVAILABLE→RESERVED     ⟲ POST /reservations/{id}/release
@@ -227,3 +236,62 @@ done
 - `SagaCompensations`.
 
 El canary de la Fase 4 las usará.
+
+---
+
+## Retención, reserva anticipada y fin automático
+
+### Retención y liquidación (billing)
+
+Funciona como la pre-autorización de una tarjeta en una gasolinera:
+
+| Momento | Operación | Transacción | Saldo disponible |
+| --- | --- | --- | --- |
+| Paso 2 de la SAGA | `POST /holds` | `HELD`, retiene el **estimado** (p. ej. 2720 ¢) | −2720 |
+| Fin de la carga | `POST /holds/{saga}/capture` (energía real) | `CAPTURED`: cobra `kWh reales × precio`, nunca más de lo retenido | +diferencia |
+| Compensación | `POST /holds/{saga}/release` | `RELEASED` | +2720 |
+
+- **Atomicidad:** cada transición es un `TransactWriteItems` con la condición
+  `status IN (HELD, CHARGED)`. Liquidar o liberar dos veces no cobra ni devuelve dos veces.
+- **Verificado:**
+  - 10 kWh pedidos y entregados → retenidos 680 ¢, liquidados 680 ¢;
+  - carga detenida antes de tiempo → se cobra solo lo entregado y se libera el resto.
+
+### Reserva anticipada: SAGA de larga duración con compensación por timeout
+
+```text
+reserveAndStartCharging(arrivalMinutes: 5)
+  1. Reservar bahía (bloqueo temporal)   ─┐
+  2. Retener saldo                        ├─ AWAITING_ARRIVAL  (plazo = ahora + 5 min + 30 s)
+                                          │
+  confirmArrival ─► 3. Activar cargador ──┴─► COMPLETED
+  cancelReservation ─► liberar saldo ↩ liberar bahía ─► COMPENSATED (arrival:CANCELLED)
+  [plazo vencido] supervisor ─► liberar saldo ↩ liberar bahía ─► COMPENSATED (arrival:EXPIRED)
+```
+
+**Defensa en profundidad del bloqueo temporal:**
+
+- **Orquestador:** el supervisor del gateway compensa la saga al vencer el plazo.
+- **Servicio de reservas:** su propio barrido (`expire_overdue`, cada 15 s) libera cualquier
+  reserva `RESERVED` vencida, con un margen de 60 s después del plazo del orquestador. Así, una
+  bahía **nunca queda bloqueada para siempre**, aunque el orquestador esté caído.
+- **Reservas inmediatas:** también vencen (TTL 120 s) si la saga muere antes de activar el
+  cargador.
+
+**Verificado en Kubernetes `dev`:** una reserva anticipada de 2 minutos sin llegada terminó en
+`COMPENSATED / arrival:EXPIRED` y el conector volvió a `AVAILABLE`, sin intervención.
+
+### Fin automático de la carga (supervisor)
+
+`graphql_gateway/saga/supervisor.py` corre en segundo plano en cada réplica del gateway:
+
+- consulta el GSI `by-status` para encontrar las sagas `COMPLETED`;
+- si la telemetría indica `target_reached`, ejecuta `stop("target_reached")`: detiene el cargador,
+  **liquida** la energía real y libera el conector;
+- también vence las reservas anticipadas cuyo plazo pasó.
+
+**Varias réplicas no duplican cobros:** cada operación es idempotente y una saga `FINISHED` se
+devuelve tal cual.
+
+**Simulación acelerada:** `CHARGING_SIMULATION_SPEEDUP=20` en dev y test, para que 30 kWh se
+entreguen en ~40 s durante la demo. En prod vale 1 (tiempo real).

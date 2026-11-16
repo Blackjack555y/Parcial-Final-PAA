@@ -7,6 +7,10 @@
 
 Estados del conector: AVAILABLE → RESERVED → CHARGING → AVAILABLE   (o FAULTED)
 
+Bloqueo TEMPORAL: toda reserva lleva expires_at (epoch). Si la carga no arranca antes, el
+barrido de este mismo servicio (expire_overdue) la libera con motivo "expired", aunque el
+orquestador esté caído: la bahía nunca queda bloqueada para siempre.
+
 Idempotencia: el saga_id es la llave. Reservar dos veces con el mismo saga_id devuelve la
 misma reserva; liberar dos veces no hace nada la segunda vez. Las escrituras son condicionales
 y van en TransactWriteItems (conector + registro de reserva cambian juntos o no cambian).
@@ -15,6 +19,7 @@ y van en TransactWriteItems (conector + registro de reserva cambian juntos o no 
 from __future__ import annotations
 
 import contextlib
+import time
 from datetime import UTC, datetime
 from typing import Any
 
@@ -90,13 +95,20 @@ class ReservationRepository:
 
     # --- Paso 1 de la SAGA: reservar ----------------------------------------------------
     def reserve(
-        self, saga_id: str, station_id: str, connector_id: str, fleet_id: str
+        self,
+        saga_id: str,
+        station_id: str,
+        connector_id: str,
+        fleet_id: str,
+        hold_seconds: int = 120,
     ) -> dict[str, Any]:
         existing = self.get_reservation(saga_id)
         if existing:  # reintento de la misma saga → misma respuesta (idempotencia)
             return existing
         connector = self.get_connector(station_id, connector_id)
         now = _now()
+        expires_at = int(time.time()) + hold_seconds
+        reserved_until = datetime.fromtimestamp(expires_at, UTC).isoformat(timespec="seconds")
         try:
             self.ddb.transact_write_items(
                 TransactItems=[
@@ -107,7 +119,7 @@ class ReservationRepository:
                             "ConditionExpression": "#s = :available",
                             "UpdateExpression": (
                                 "SET #s = :reserved, reserved_by = :saga, fleet_id = :fleet, "
-                                "updated_at = :now"
+                                "reserved_until = :until, updated_at = :now"
                             ),
                             "ExpressionAttributeNames": {"#s": "status"},
                             "ExpressionAttributeValues": to_item(
@@ -116,6 +128,7 @@ class ReservationRepository:
                                     ":reserved": RESERVED,
                                     ":saga": saga_id,
                                     ":fleet": fleet_id,
+                                    ":until": reserved_until,
                                     ":now": now,
                                 }
                             ),
@@ -135,6 +148,8 @@ class ReservationRepository:
                                     "power_kw": connector["power_kw"],
                                     "fleet_id": fleet_id,
                                     "status": RESERVED,
+                                    "expires_at": expires_at,
+                                    "reserved_until": reserved_until,
                                     "created_at": now,
                                     "updated_at": now,
                                 }
@@ -196,9 +211,11 @@ class ReservationRepository:
         saga_id = reservation["saga_id"]
         now = _now()
         if connector_status == AVAILABLE:
-            connector_expr = "SET #s = :cs, updated_at = :now REMOVE reserved_by, fleet_id"
-        else:
-            connector_expr = "SET #s = :cs, updated_at = :now"
+            connector_expr = (
+                "SET #s = :cs, updated_at = :now REMOVE reserved_by, fleet_id, reserved_until"
+            )
+        else:  # CHARGING: el vehículo llegó, la reserva ya no vence
+            connector_expr = "SET #s = :cs, updated_at = :now REMOVE reserved_until"
         connector_update = {
             "TableName": self.table,
             "Key": _connector_key(reservation["station_id"], reservation["connector_id"]),
@@ -238,6 +255,32 @@ class ReservationRepository:
                 ) from exc
         return self._require(saga_id)
 
+    # --- Bloqueo temporal: liberar reservas vencidas ------------------------------------
+    def expire_overdue(self, now: float | None = None) -> list[str]:
+        """Libera las reservas RESERVED cuyo expires_at ya pasó. Devuelve los saga_id liberados."""
+        now = now if now is not None else time.time()
+        kwargs: dict[str, Any] = {
+            "TableName": self.table,
+            "FilterExpression": "begins_with(pk, :p) AND #s = :reserved AND expires_at < :now",
+            "ExpressionAttributeNames": {"#s": "status"},
+            "ExpressionAttributeValues": to_item(
+                {":p": "RESERVATION#", ":reserved": RESERVED, ":now": int(now)}
+            ),
+        }
+        expired: list[str] = []
+        while True:
+            page = self.ddb.scan(**kwargs)
+            for item in page.get("Items", []):
+                saga_id = from_item(item)["saga_id"]
+                try:
+                    if self.release(saga_id, "expired")["released"]:
+                        expired.append(saga_id)
+                except Conflict:
+                    pass  # cambió de estado en paralelo (p. ej. arrancó la carga): no se toca
+            if "LastEvaluatedKey" not in page:
+                return expired
+            kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
+
     # --- Carga inicial (scripts/seed.py) -----------------------------------------------
     def put_station(self, station: dict[str, Any], *, reset: bool = False) -> None:
         sid = station["station_id"]
@@ -274,6 +317,7 @@ def _connector(item: dict[str, Any]) -> dict[str, Any]:
         "status": item.get("status"),
         "reserved_by": item.get("reserved_by"),
         "fleet_id": item.get("fleet_id"),
+        "reserved_until": item.get("reserved_until"),
         "updated_at": item.get("updated_at"),
     }
 

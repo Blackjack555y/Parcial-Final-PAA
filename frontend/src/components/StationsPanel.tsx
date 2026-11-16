@@ -1,10 +1,12 @@
 import type { Station } from "../api/types";
-import { CONNECTOR_STATUS } from "../lib/format";
+import { useNow } from "../hooks/useLive";
+import { CONNECTOR_STATUS, countdown } from "../lib/format";
 import { Chip, Panel } from "./ui";
 
 export function StationsPanel({ stations, error }: { stations: Station[] | null; error: string | null }) {
   const total = stations?.reduce((n, s) => n + s.connectors.length, 0) ?? 0;
   const free = stations?.reduce((n, s) => n + s.availableConnectors, 0) ?? 0;
+  const now = useNow();
   return (
     <Panel
       title="Electrolineras"
@@ -30,6 +32,11 @@ export function StationsPanel({ stations, error }: { stations: Station[] | null;
                   </span>
                   <Chip tone={st.tone} icon={st.icon} live={st.live}>
                     {st.label}
+                    {c.status === "RESERVED" && c.reservedUntil && (
+                      <span title="Bloqueo temporal: se libera solo si no arranca la carga">
+                        {" "}· {countdown(c.reservedUntil, now)}
+                      </span>
+                    )}
                   </Chip>
                 </div>
               );
