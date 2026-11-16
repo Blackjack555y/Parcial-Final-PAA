@@ -70,7 +70,13 @@ def audit(snap: Snapshot, now: datetime | None = None, stuck_after_s: int = 120)
 
         # 2. Compensación que agotó sus reintentos.
         if status == "COMPENSATION_FAILED":
-            add("CRITICAL", "compensacion_fallida", sid, saga.get("failure_reason") or "")
+            pending = []
+            if charge and charge.get("status") == "CHARGED":
+                pending.append(f"{charge.get('amount_cents')} ¢ sin reembolsar")
+            if reservation and reservation.get("status") in OPEN_RESERVATION:
+                pending.append("conector retenido")
+            detail = f"{saga.get('failure_reason') or ''}: {', '.join(pending) or 'revisar'}"
+            add("CRITICAL", "compensacion_fallida", sid, detail)
 
         # 3. Rollback "terminado" pero el dinero no volvió.
         if status in ROLLED_BACK and charge and charge.get("status") == "CHARGED":

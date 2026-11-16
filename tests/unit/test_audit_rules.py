@@ -55,9 +55,16 @@ def test_stuck_saga_depends_on_age():
     assert ("WARNING", "saga_atascada") not in _rules(fresh)  # en curso, no atascada
 
 
-def test_compensation_failed_is_critical():
-    snap = _snap(sagas={"s1": {"status": "COMPENSATION_FAILED", "failure_reason": "x"}})
-    assert ("CRITICAL", "compensacion_fallida") in _rules(snap)
+def test_compensation_failed_is_critical_and_says_what_is_pending():
+    snap = _snap(
+        sagas={"s1": {"status": "COMPENSATION_FAILED", "failure_reason": "dispatch:CHARGER_FAULT"}},
+        charges={"s1": {"status": "CHARGED", "amount_cents": 2040}},
+        reservations={"s1": {"status": "RELEASED"}},
+    )
+    (finding,) = audit(snap, NOW)
+    assert (finding.severity, finding.rule) == ("CRITICAL", "compensacion_fallida")
+    assert "2040 ¢ sin reembolsar" in finding.detail
+    assert "conector" not in finding.detail  # el conector sí se liberó
 
 
 def test_completed_saga_requires_active_session():
