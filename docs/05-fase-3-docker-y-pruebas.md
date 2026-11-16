@@ -35,7 +35,7 @@ Solo el gateway publica un puerto (`127.0.0.1:8000`). Los microservicios son int
 | --- | --- | --- | --- |
 | `tests/unit` | 54 | Lógica de la SAGA (orden inverso, reintentos, idempotencia), tarifas, telemetría, logs JSON, protecciones GraphQL, guardia de Terraform | Runner de GitHub |
 | `tests/integration` | 10 | SAGA completa por GraphQL con los 4 servicios en proceso contra **DynamoDB real** (Floci): tablas, doble reembolso, doble reserva; S3 versionado; logs | Runner de GitHub + Floci efímero |
-| `tests/e2e` | 8 | Stack en **contenedores** por su API pública: 3 escenarios de la SAGA, telemetría, WSS en vivo, `correlation_id` en CloudWatch | Runner de GitHub + ambiente efímero completo |
+| `tests/e2e` | 12 | Stack en **contenedores** por su API pública: 3 escenarios de la SAGA, telemetría, WSS en vivo, `correlation_id` en CloudWatch, consola web (Fase 6) | Runner de GitHub + ambiente efímero completo |
 
 ### Cómo arma su ambiente `e2e-tests`
 

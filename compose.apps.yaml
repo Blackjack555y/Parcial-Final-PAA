@@ -3,8 +3,8 @@
 #   docker compose -f compose.yaml -f compose.apps.yaml up -d --build --wait
 #   (atajo: ./scripts/dev.sh up-apps [dev|test|prod])
 #
-# Solo el gateway publica un puerto (127.0.0.1:8000); los microservicios son internos a la red
-# "aegisvolt", igual que en Kubernetes (ClusterIP).
+# Publican puerto solo el gateway (127.0.0.1:8000) y la consola (127.0.0.1:3000); los
+# microservicios son internos a la red "aegisvolt", igual que en Kubernetes (ClusterIP).
 
 x-service: &service
   restart: unless-stopped
@@ -69,7 +69,7 @@ services:
       BILLING_URL: http://billing-wallet-service:8080
       DISPATCH_URL: http://energy-dispatch-service:8080
       FLAGS_ADMIN_TOKEN: ${FLAGS_ADMIN_TOKEN:-}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://127.0.0.1:3000,http://localhost:3000,http://localhost:5173}
     depends_on:
       floci:
         condition: service_healthy
@@ -78,4 +78,22 @@ services:
       billing-wallet-service:
         condition: service_healthy
       energy-dispatch-service:
+        condition: service_healthy
+
+  frontend:
+    image: aegisvolt/frontend:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args: { VERSION: "${IMAGE_TAG:-local}" }
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [aegisvolt]
+    ports:
+      - "127.0.0.1:3000:8080" # consola: http://127.0.0.1:3000
+    depends_on:
+      graphql-gateway:
         condition: service_healthy

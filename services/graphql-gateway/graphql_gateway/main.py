@@ -11,6 +11,7 @@ Protecciones del esquema:
   - MaskErrors: los errores internos llegan al cliente como "Unexpected error."; solo los
     UserError (validación y reglas de negocio) muestran su mensaje.
   - Mutaciones administrativas protegidas con X-Admin-Token (comparación en tiempo constante).
+  - WebSocket: solo se aceptan Origins de la lista CORS_ORIGINS del ambiente.
 """
 
 from __future__ import annotations
@@ -119,6 +120,10 @@ def create_app(
         context_getter=context_getter,
         graphql_ide=None if settings.env is Environment.PROD else "graphiql",
         subscription_protocols=[GRAPHQL_TRANSPORT_WS_PROTOCOL],
+        # Protección contra Cross-Site WebSocket Hijacking: un WebSocket del navegador solo se
+        # acepta si su Origin es una consola conocida de ESTE ambiente (los clientes sin Origin,
+        # como scripts y pruebas, no la necesitan).
+        allowed_origins=origins,
     )
     app.include_router(router, prefix="/graphql")
     app.state.orchestrator = orchestrator

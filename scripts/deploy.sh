@@ -23,7 +23,10 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Servicios de la pista (stable/canary) y todas las imágenes (incluye la consola web, que solo
+# vive en la pista estable y se actualiza al promover).
 SERVICES=(station-reservation-service billing-wallet-service energy-dispatch-service graphql-gateway)
+IMAGES=("${SERVICES[@]}" frontend)
 PYTHON="$ROOT/.venv/bin/python"
 [[ -x "$PYTHON" ]] || PYTHON=python3
 export AWS_ENDPOINT_URL="${AWS_ENDPOINT_URL:-http://localhost:4566}"
@@ -37,12 +40,12 @@ usage() { sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
 image_tag() {
   # Mismo código ⇒ misma etiqueta: al promover dev→test→prod se despliega la imagen idéntica
   # (build once). Un cambio solo de infraestructura no dispara un canary innecesario.
-  git -C "$ROOT" rev-parse HEAD:services HEAD:libs | sha256sum | cut -c1-12
+  git -C "$ROOT" rev-parse HEAD:services HEAD:libs HEAD:frontend | sha256sum | cut -c1-12
 }
 
 build() {
   IMAGE_TAG="$1" docker compose -f "$ROOT/compose.yaml" -f "$ROOT/compose.apps.yaml" build \
-    "${SERVICES[@]}"
+    "${IMAGES[@]}"
 }
 
 # --- Clúster y conexión con Floci ------------------------------------------------------------
@@ -62,7 +65,7 @@ ensure_cluster() {
 load_images() {
   local tag="$1" loaded
   loaded="$(minikube image ls 2>/dev/null)"
-  for svc in "${SERVICES[@]}"; do
+  for svc in "${IMAGES[@]}"; do
     if ! grep -q "aegisvolt/$svc:$tag" <<<"$loaded"; then
       log "Cargando imagen aegisvolt/$svc:$tag en minikube"
       minikube image load "aegisvolt/$svc:$tag"
@@ -79,7 +82,7 @@ render() {
     echo "kind: Kustomization"
     echo "resources: [../../k8s/overlays/$overlay]"
     echo "images:"
-    for svc in "${SERVICES[@]}"; do echo "  - { name: aegisvolt/$svc, newTag: \"$tag\" }"; done
+    for svc in "${IMAGES[@]}"; do echo "  - { name: aegisvolt/$svc, newTag: \"$tag\" }"; done
   } >"$dir/kustomization.yaml"
   kubectl kustomize "$dir"
   rm -rf "$dir"
@@ -131,8 +134,9 @@ current_stable_tag() {
 }
 
 wait_track() {
-  local ns="$1" suffix="$2"
-  for svc in "${SERVICES[@]}"; do
+  local ns="$1" suffix="$2" list=("${SERVICES[@]}")
+  [[ -z "$suffix" ]] && list=("${IMAGES[@]}") # la pista estable incluye la consola
+  for svc in "${list[@]}"; do
     kubectl rollout status "deploy/$svc$suffix" -n "$ns" --timeout=180s >/dev/null
   done
 }
