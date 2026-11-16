@@ -1,0 +1,44 @@
+/* Animaciones del loader (Uiverse.io · Juanes200122 · MIT), por clase en vez de por id. */
+.loader { display: inline-flex; flex-direction: column; align-items: center; gap: 12px; }
+.loader-svg { overflow: visible; }
+.loader-label { font-size: 13px; color: var(--muted); letter-spacing: 0.02em; }
+
+.loader-svg .ld-line-v1,
+.loader-svg .ld-line-v2,
+.loader-svg .ld-node,
+.loader-svg .ld-panel,
+.loader-svg .ld-beams,
+.loader-svg .ld-particles {
+  animation: ld-bounce 3s ease-in-out infinite alternate;
+}
+.loader-svg .ld-line-v2 { animation-delay: 0.2s; }
+.loader-svg .ld-node,
+.loader-svg .ld-panel,
+.loader-svg .ld-beams,
+.loader-svg .ld-particles { animation-delay: 0.4s; }
+
+.loader-svg .particle { animation: ld-float linear infinite; }
+.loader-svg .p1 { animation-duration: 2.2s; }
+.loader-svg .p2 { animation-duration: 2.5s; animation-delay: 0.3s; }
+.loader-svg .p3 { animation-duration: 2s; animation-delay: 0.6s; }
+.loader-svg .p4 { animation-duration: 2.8s; animation-delay: 0.2s; }
+.loader-svg .p5 { animation-duration: 2.3s; animation-delay: 0.4s; }
+.loader-svg .p6 { animation-duration: 3s; animation-delay: 0.1s; }
+.loader-svg .p7 { animation-duration: 2.1s; animation-delay: 0.5s; }
+.loader-svg .p8 { animation-duration: 2.6s; animation-delay: 0.2s; }
+.loader-svg .p9 { animation-duration: 2.4s; animation-delay: 0.3s; }
+
+@keyframes ld-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+@keyframes ld-float {
+  0% { transform: translateY(0); opacity: 0; }
+  10% { opacity: 1; }
+  100% { transform: translateY(-40px); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loader-svg * { animation: none !important; }
+}

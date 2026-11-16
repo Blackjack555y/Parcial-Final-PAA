@@ -19,7 +19,7 @@ Proyecto final individual de **Patrones Arquitectónicos Avanzados**.
 | 3 | Docker y pruebas reales en CI | ✅ Completada |
 | 4 | Kubernetes, canary y deploy por rama | ✅ Completada |
 | 5 | Prefect | ✅ Completada |
-| 6 | Frontend | Pendiente |
+| 6 | Frontend | ✅ Completada |
 | 7 | Release final, QA y ensayo | Pendiente |
 
 ## Arquitectura
@@ -78,7 +78,7 @@ Si una compensación llega dos veces, la segunda no tiene efecto.
 | Contenedores | Docker, Kubernetes (minikube localmente, EKS declarado en Terraform), Ingress canary |
 | CI/CD | GitHub Actions (runners de GitHub + runner self-hosted) |
 | Observabilidad | Amazon CloudWatch Logs y Metrics, Prefect 3 |
-| Frontend | React, Vite, TypeScript, `graphql-ws` |
+| Frontend | React 19, Vite, TypeScript, `graphql-ws`, nginx sin root. Loader: [Juanes200122 en Uiverse.io](https://uiverse.io/Juanes200122) (MIT) |
 
 ## Ambientes
 
@@ -227,6 +227,11 @@ TAG=$(./scripts/deploy.sh image-tag)
 # Observabilidad (Prefect UI en http://127.0.0.1:4200)
 ./scripts/dev.sh up-observability  # flujos de salud (5 min) y auditoría de la SAGA (10 min)
 
+# Consola web de cada ambiente (port-forward)
+./scripts/ui.sh start              # dev :3001 · test :3002 · prod :3003
+./scripts/ui.sh token dev          # X-Admin-Token para cambiar flags desde la consola
+cd frontend && npm install && npm run dev   # desarrollo (Vite :5173 → gateway :8000)
+
 # Calidad
 ./scripts/dev.sh lint
 ./scripts/dev.sh test all          # unit + integration + e2e
@@ -248,6 +253,7 @@ TAG=$(./scripts/deploy.sh image-tag)
 | --- | --- |
 | [FASES-DESARROLLO.md](FASES-DESARROLLO.md) | Orden de las fases, decisiones (E1–E3, T1–T7) y cuándo queda lista cada pregunta de la sustentación |
 | [docs/01-teoria-y-decisiones.md](docs/01-teoria-y-decisiones.md) | Registro de decisiones (ADR) y resultados de las pruebas de Floci |
+| [docs/08-fase-6-frontend.md](docs/08-fase-6-frontend.md) | Consola web: paneles, despliegue same-origin, seguridad y demo de flags por ambiente |
 | [docs/07-fase-5-prefect.md](docs/07-fase-5-prefect.md) | Prefect: salud de ambientes, auditoría de la SAGA, detección y remediación |
 | [docs/06-fase-4-kubernetes-canary.md](docs/06-fase-4-kubernetes-canary.md) | Kubernetes endurecido, NetworkPolicy, canary 20 % → 100 % y condición de promoción |
 | [docs/05-fase-3-docker-y-pruebas.md](docs/05-fase-3-docker-y-pruebas.md) | Imágenes endurecidas, Trivy y pirámide de pruebas (unit, integración, e2e) |

@@ -1,4 +1,4 @@
-# Ambiente test: namespace + plataforma + pista estable.
+# Ambiente test: namespace + plataforma + pista estable + consola web.
 #   kubectl kustomize k8s/overlays/test   (lo aplica scripts/deploy.sh con la etiqueta de imagen)
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
@@ -7,10 +7,17 @@ resources:
   - namespace.yaml
   - ../../base/platform
   - apps
+  - ../../base/frontend
 labels:
   - pairs:
       aegisvolt/environment: test
     includeTemplates: true
+patches:
+  - target: { kind: Ingress, name: frontend }
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: app.test.aegisvolt.local
 configMapGenerator:
   - name: aegisvolt-config
     literals:
@@ -23,6 +30,6 @@ configMapGenerator:
       - PEAK_HOURS=0-24
       - PRICING_TZ=America/Bogota
       - LOG_LEVEL=INFO
-      - CORS_ORIGINS=http://app.test.aegisvolt.local,http://localhost:5173
+      - CORS_ORIGINS=http://app.test.aegisvolt.local,http://127.0.0.1:3002,http://localhost:3002,http://localhost:5173
 generatorOptions:
   disableNameSuffixHash: true # la pista canary referencia el mismo ConfigMap por nombre
