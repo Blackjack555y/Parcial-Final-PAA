@@ -84,10 +84,14 @@ resource "aws_api_gateway_integration" "proxy" {
   http_method             = each.value.http_method
   type                    = "HTTP_PROXY"
   integration_http_method = "ANY"
-  uri                     = "http://${var.nlb_dns_name}/{proxy}"
-  connection_type         = "VPC_LINK"
-  connection_id           = aws_api_gateway_vpc_link.this.id
   timeout_milliseconds    = 29000
+
+  # VPC_LINK: el tráfico va SIEMPRE al NLB interno del VPC Link. El hostname de la URI no decide
+  # el destino: es el Host que recibe el Ingress (api.<env>.aegisvolt.local) para enrutar al
+  # ambiente correcto. En Floci, ese hostname se resuelve a minikube (extra_hosts en compose).
+  uri             = "http://${var.backend_host}/{proxy}"
+  connection_type = "VPC_LINK"
+  connection_id   = aws_api_gateway_vpc_link.this.id
 
   request_parameters = { "integration.request.path.proxy" = "method.request.path.proxy" }
 }

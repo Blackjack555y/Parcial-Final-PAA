@@ -9,3 +9,7 @@ output "invoke_urls" {
 output "vpc_link_id" {
   value = aws_api_gateway_vpc_link.this.id
 }
+
+output "rest_api_id_public" {
+  value = aws_api_gateway_rest_api.this["public"].id
+}

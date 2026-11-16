@@ -14,6 +14,7 @@ services:
     environment:
       PREFECT_UI_API_URL: http://127.0.0.1:4200/api # la UI corre en el navegador del host
       PREFECT_SERVER_ANALYTICS_ENABLED: "false"
+      PREFECT_SERVER_UI_SHOW_PROMOTIONAL_CONTENT: "false" # sin ventanas promocionales en la demo
       PREFECT_HOME: /data
     volumes:
       - prefect-data:/data # base SQLite: el historial de ejecuciones sobrevive reinicios
