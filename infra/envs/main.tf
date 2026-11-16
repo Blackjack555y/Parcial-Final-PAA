@@ -73,4 +73,5 @@ module "api_gateway" {
   nlb_arn             = module.ingress_nlb.nlb_arn
   nlb_dns_name        = module.ingress_nlb.nlb_dns_name
   execute_api_vpce_id = module.vpc_endpoints.execute_api_endpoint_id
+  backend_host        = "api.${local.env}.aegisvolt.local"
 }

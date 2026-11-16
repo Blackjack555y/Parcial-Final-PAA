@@ -12,6 +12,11 @@ services:
       FLOCI_HOSTNAME: floci           # URLs devueltas válidas desde otros contenedores
       FLOCI_STORAGE_MODE: wal         # write-ahead log: el tfstate en S3 sobrevive a reinicios
       FLOCI_STORAGE_PERSISTENT_PATH: /app/data
+    # API Gateway (Floci) → Ingress de Kubernetes: cada ambiente por su hostname, como en AWS.
+    extra_hosts:
+      - "api.dev.aegisvolt.local:${MINIKUBE_IP:-192.168.49.2}"
+      - "api.test.aegisvolt.local:${MINIKUBE_IP:-192.168.49.2}"
+      - "api.prod.aegisvolt.local:${MINIKUBE_IP:-192.168.49.2}"
     volumes:
       - floci-data:/app/data
     healthcheck:
