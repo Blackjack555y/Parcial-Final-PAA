@@ -81,3 +81,4 @@ spec:
     app: graphql-gateway
   ports:
     - { name: http, port: 80, targetPort: http }
+    - { name: http-alt, port: 8080, targetPort: http } # el nginx de la consola usa :8080 (igual que en compose)

@@ -39,6 +39,17 @@ jobs:
         run: shellcheck scripts/*.sh
       - name: actionlint (workflows)
         run: docker run --rm -v "$PWD":/repo -w /repo rhysd/actionlint:1.7.12 -color
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Frontend (typecheck + build + pruebas)
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+          npm test
       - name: Esquema GraphQL al día (schema.graphql = código)
         run: python scripts/export_schema.py --check
       - name: Manifiestos de Kubernetes (los 9 overlays renderizan)
@@ -63,7 +74,7 @@ jobs:
         env:
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          for svc in station-reservation-service billing-wallet-service energy-dispatch-service graphql-gateway prefect-flows; do
+          for svc in station-reservation-service billing-wallet-service energy-dispatch-service graphql-gateway frontend prefect-flows; do
             echo "::group::Trivy $svc"
             docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
               aquasec/trivy:0.76.2 image --quiet --severity HIGH,CRITICAL --ignore-unfixed \
