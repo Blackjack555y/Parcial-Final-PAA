@@ -164,3 +164,27 @@ def test_chaos_is_off_by_default(monkeypatch):
     assert _chaos_rate() == 0.0
     monkeypatch.setenv("CHAOS_ERROR_RATE", "basura")
     assert _chaos_rate() == 0.0
+
+
+def test_chaos_can_target_a_single_path(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from aegis_common.web import install
+
+    monkeypatch.setenv("CHAOS_ERROR_RATE", "1")
+    monkeypatch.setenv("CHAOS_PATH_REGEX", r".*/refund$")
+    app = FastAPI()
+    install(app, logging.getLogger("chaos-path"))
+
+    @app.post("/charges")
+    def charge():
+        return {"ok": True}
+
+    @app.post("/charges/{sid}/refund")
+    def refund(sid: str):
+        return {"ok": True}
+
+    client = TestClient(app)
+    assert client.post("/charges").status_code == 200  # el cobro funciona…
+    assert client.post("/charges/saga-1/refund").status_code == 500  # …el reembolso falla

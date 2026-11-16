@@ -5,6 +5,7 @@
 !services/*/*/**
 !services/graphql-gateway/schema.graphql
 !frontend/**
+!observability/prefect/**
 **/__pycache__
 **/*.egg-info
 **/.pytest_cache

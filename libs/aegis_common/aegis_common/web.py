@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import random
+import re
 import time
 from collections.abc import Callable
 
@@ -34,9 +35,17 @@ def _chaos_rate() -> float:
 
 def install(app: FastAPI, logger: logging.Logger, ready_check: Callable[[], bool] | None = None):
     chaos = _chaos_rate()
+    # Opcional: limitar la falla a ciertas rutas (p. ej. solo el reembolso: ".*/refund$").
+    chaos_paths = re.compile(os.environ.get("CHAOS_PATH_REGEX", ".*"))
     version = os.environ.get("AEGIS_VERSION", "dev-local")
     if chaos:
-        log_event(logger, "chaos_enabled", level=logging.WARNING, error_rate=chaos)
+        log_event(
+            logger,
+            "chaos_enabled",
+            level=logging.WARNING,
+            error_rate=chaos,
+            paths=os.environ.get("CHAOS_PATH_REGEX", ".*"),
+        )
 
     @app.middleware("http")
     async def correlation_and_access_log(request: Request, call_next):
@@ -46,7 +55,8 @@ def install(app: FastAPI, logger: logging.Logger, ready_check: Callable[[], bool
         start = time.perf_counter()
         status = 500
         try:
-            if chaos and request.url.path not in _SKIP_LOG and random.random() < chaos:  # noqa: S311
+            inject = chaos and request.url.path not in _SKIP_LOG
+            if inject and chaos_paths.fullmatch(request.url.path) and random.random() < chaos:  # noqa: S311
                 response = JSONResponse(
                     status_code=500, content={"error": "CHAOS", "message": "fallo inyectado"}
                 )
