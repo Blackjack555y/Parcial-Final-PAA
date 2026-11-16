@@ -12,10 +12,11 @@ _SAGA_NAMESPACE = uuid.UUID("6f1d3a52-6c1e-4a7b-9f40-2a9e5c0b7d11")
 
 class SagaStatus(StrEnum):
     STARTED = "STARTED"  # registrada, ningún paso ejecutado
-    RESERVED = "RESERVED"  # paso 1 OK: conector bloqueado
-    CHARGED = "CHARGED"  # paso 2 OK: saldo retenido
+    RESERVED = "RESERVED"  # paso 1 OK: conector bloqueado (temporalmente)
+    CHARGED = "CHARGED"  # paso 2 OK: saldo RETENIDO (pre-autorización)
+    AWAITING_ARRIVAL = "AWAITING_ARRIVAL"  # pasos 1-2 OK, esperando que llegue el vehículo
     COMPLETED = "COMPLETED"  # paso 3 OK: el cargador entrega energía
-    FINISHED = "FINISHED"  # la sesión terminó y el conector se liberó
+    FINISHED = "FINISHED"  # carga terminada: cobro liquidado y conector liberado
     FAILED = "FAILED"  # falló el paso 1: no había nada que compensar
     COMPENSATING = "COMPENSATING"  # ejecutando compensaciones
     COMPENSATED = "COMPENSATED"  # rollback distribuido completo
@@ -37,6 +38,7 @@ class SagaRequest:
     fleet_id: str
     kwh: float
     idempotency_key: str | None = None
+    arrival_minutes: int = 0  # 0 = el vehículo ya está en la bahía
 
 
 def saga_id_for(idempotency_key: str | None) -> str:

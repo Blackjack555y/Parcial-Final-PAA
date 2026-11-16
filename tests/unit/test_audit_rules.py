@@ -25,7 +25,7 @@ def test_consistent_compensated_saga_only_reports_info():
     snap = _snap(
         sagas={"s1": {"status": "COMPENSATED", "updated_at": OLD}},
         reservations={"s1": {"status": "RELEASED"}},
-        charges={"s1": {"status": "REFUNDED"}},
+        charges={"s1": {"status": "RELEASED"}},
         sessions={"s1": {"status": "FAILED"}},
     )
     assert _rules(snap) == {("INFO", "saga_compensada")}
@@ -63,7 +63,7 @@ def test_compensation_failed_is_critical_and_says_what_is_pending():
     )
     (finding,) = audit(snap, NOW)
     assert (finding.severity, finding.rule) == ("CRITICAL", "compensacion_fallida")
-    assert "2040 ¢ sin reembolsar" in finding.detail
+    assert "2040 ¢ retenidos sin liberar" in finding.detail
     assert "conector" not in finding.detail  # el conector sí se liberó
 
 
@@ -111,3 +111,30 @@ def test_health_verdicts():
     prod_fault = {**ok, "env": "prod", "fault_flag": True}
     verdict, reasons = health_verdict(prod_fault)
     assert verdict == "DEGRADED" and "PROD" in reasons[0]
+
+
+def test_held_funds_after_rollback_are_critical():
+    snap = _snap(
+        sagas={"s1": {"status": "COMPENSATED"}},
+        charges={"s1": {"status": "HELD", "amount_cents": 900}},
+    )
+    assert ("CRITICAL", "cobro_sin_reembolso") in _rules(snap)
+
+
+def test_finished_saga_must_settle_the_hold():
+    snap = _snap(
+        sagas={"s1": {"status": "FINISHED"}},
+        charges={"s1": {"status": "HELD", "amount_cents": 900}},
+    )
+    assert ("WARNING", "retencion_sin_liquidar") in _rules(snap)
+    settled = _snap(sagas={"s1": {"status": "FINISHED"}}, charges={"s1": {"status": "CAPTURED"}})
+    assert _rules(settled) == set()
+
+
+def test_awaiting_arrival_is_only_flagged_after_the_deadline():
+    overdue = _snap(sagas={"s1": {"status": "AWAITING_ARRIVAL", "arrival_deadline": OLD}})
+    waiting = _snap(
+        sagas={"s1": {"status": "AWAITING_ARRIVAL", "arrival_deadline": NOW.isoformat()}}
+    )
+    assert ("WARNING", "reserva_vencida_sin_compensar") in _rules(overdue)
+    assert _rules(waiting) == set()  # esperar dentro del plazo es normal

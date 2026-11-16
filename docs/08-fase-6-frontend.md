@@ -8,11 +8,11 @@ oscuro, con modo claro opcional y paleta derivada del loader (violeta `#5727CC` 
 | Panel | Rúbrica | Datos | Tiempo real |
 | --- | --- | --- | --- |
 | **Electrolineras** | Estado y disponibilidad de conectores | Suscripción `stations` | WSS |
-| **Reservar y activar carga** | Dispara la SAGA | Mutación `reserveAndStartCharging` + cotización `quote` | La cotización cambia al instante con la tarifa dinámica |
+| **Reservar y activar carga** | Dispara la SAGA | Mutación `reserveAndStartCharging` (llegada: ahora o en 1/2/5/10 min) + `confirmArrival` / `cancelReservation` + cotización `quote` | La cotización cambia al instante con la tarifa dinámica; cuenta regresiva del plazo |
 | **Feature flags · `<env>`** | Flags activas del ambiente | Suscripción `featureFlags`; interruptores con `setFeatureFlag` | WSS |
 | **Historial de sagas** | Transacciones y compensaciones | Suscripción `sagas` + detalle `saga(sagaId)` | WSS |
-| Billetera | Saldo, cobros y reembolsos | `wallet(fleetId)` | Sondeo 4 s |
-| Cargas activas | Telemetría y detener la carga | `chargingSessions`, `telemetry`, `stopCharging` | Sondeo 2 s |
+| Billetera | Saldo disponible, **retenido**, transacciones Retenido / Liquidado / Liberado | `wallet(fleetId)` | Sondeo 4 s |
+| Cargas activas | Telemetría (kWh entregados de los pedidos), detener, cierre automático | `chargingSessions`, `telemetry`, `stopCharging` | Sondeo 2 s |
 
 ### Detalles pensados para la sustentación
 
@@ -23,7 +23,11 @@ oscuro, con modo claro opcional y paleta derivada del loader (violeta `#5727CC` 
 - **Estado de la conexión:** `● En vivo · WSS` en verde, o `Sondeo HTTP` en ámbar si el
   WebSocket cae. En ese caso los paneles siguen actualizándose cada 3 s y la consola vuelve a WSS
   sola al reconectar.
-- **Línea de tiempo de cada saga:** `✓ Reservar → ✓ Cobrar → ✕ Activar ↩ ✓ Reembolsar ↩ ✓ Liberar`.
+- **Línea de tiempo de cada saga:**
+  `✓ Reservar → ✓ Retener saldo → [✓ Esperar llegada] → ✕ Activar ↩ ✓ Liberar saldo ↩ ✓ Liberar bahía`,
+  o `… → ✓ Activar ⇒ ✓ Liquidar` cuando la carga termina.
+- **Bloqueo temporal visible:** un conector reservado muestra la cuenta regresiva hasta que vence
+  (`Reservado · 3:17`).
   Las compensaciones aparecen con flechas de retorno, en el **orden inverso** en que ocurrieron.
 - **Botones de copiar** junto a `saga_id` y `correlation_id`, para pegarlos directo en el comando de
   CloudWatch (pregunta 6.4).

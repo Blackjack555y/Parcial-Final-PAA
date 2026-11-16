@@ -43,6 +43,7 @@ class Connector:
     status: str
     reserved_by: str | None
     fleet_id: str | None
+    reserved_until: str | None  # bloqueo temporal: la reserva vence a esta hora
 
 
 @strawberry.type
@@ -62,13 +63,17 @@ class Station:
 class Transaction:
     saga_id: str
     type: str
-    status: str
-    amount_cents: int
+    status: str  # HELD (retenido) · CAPTURED (liquidado) · RELEASED (liberado)
+    amount_cents: int  # monto retenido
+    captured_cents: int | None  # cobro final por la energía real
+    released_cents: int | None  # devuelto a la flota
+    energy_kwh: float | None
     kwh: float
     unit_price_cents: int
     surge_active: bool
     connector_type: str
     created_at: str
+    closed_at: str | None
     refunded_at: str | None
     refund_reason: str | None
 
@@ -77,7 +82,8 @@ class Transaction:
 class Wallet:
     fleet_id: str
     name: str
-    balance_cents: int
+    balance_cents: int  # saldo disponible
+    held_cents: int  # saldo retenido por cargas en curso o reservas
     currency: str
     transactions: list[Transaction]
 
@@ -110,11 +116,15 @@ class Saga:
     fleet_id: str
     kwh: float
     correlation_id: str | None
-    amount_cents: int | None
+    amount_cents: int | None  # retenido
+    captured_cents: int | None  # liquidado al terminar
+    released_cents: int | None  # devuelto al terminar
     surge_active: bool | None
     failure_reason: str | None
     failure_message: str | None
     energy_kwh: float | None
+    arrival_deadline: str | None  # reserva anticipada: plazo para que llegue el vehículo
+    finish_reason: str | None  # manual | target_reached
     created_at: str
     updated_at: str
     events: list[SagaEvent]
@@ -149,6 +159,8 @@ class Telemetry:
     soc_percent: float
     voltage_v: float
     current_a: float
+    target_kwh: float
+    target_reached: bool
 
 
 @strawberry.type
@@ -174,6 +186,7 @@ class ReserveChargeInput:
     fleet_id: str
     kwh: float
     idempotency_key: str | None = None
+    arrival_minutes: int = 0  # 0 = ya está en la bahía; >0 = reserva anticipada
 
 
 # --- Conversión dict → tipo -------------------------------------------------------------
@@ -243,6 +256,7 @@ async def _fetch_wallet(info: Info, fleet_id: str) -> Wallet:
         fleet_id=wallet["fleet_id"],
         name=wallet["name"],
         balance_cents=wallet["balance_cents"],
+        held_cents=wallet.get("held_cents", 0),
         currency=wallet["currency"],
         transactions=[_pick(Transaction, t) for t in txns],
     )
@@ -338,6 +352,8 @@ class Mutation:
             raise UserError("kwh debe estar entre 0 y 500")
         if input.idempotency_key and len(input.idempotency_key) > 128:
             raise UserError("idempotencyKey demasiado larga")
+        if not (0 <= input.arrival_minutes <= 60):
+            raise UserError("arrivalMinutes debe estar entre 0 y 60")
         saga = await _ctx(info)["orchestrator"].start(
             SagaRequest(
                 input.station_id,
@@ -345,15 +361,35 @@ class Mutation:
                 input.fleet_id,
                 input.kwh,
                 input.idempotency_key,
+                input.arrival_minutes,
             )
         )
-        ok = saga["status"] == "COMPLETED"
-        message = (
-            "Carga activa"
-            if ok
-            else f"SAGA {saga['status']}: {saga.get('failure_message') or saga['status']}"
-        )
+        if saga["status"] == "COMPLETED":
+            message, ok = "Carga activa", True
+        elif saga["status"] == "AWAITING_ARRIVAL":
+            message, ok = f"Bahía reservada hasta {saga['arrival_deadline']}", True
+        else:
+            ok = False
+            message = f"SAGA {saga['status']}: {saga.get('failure_message') or saga['status']}"
         return SagaPayload(success=ok, message=message, saga=to_saga(saga))
+
+    @strawberry.mutation(description="Reserva anticipada: el vehículo llegó → activar el cargador.")
+    async def confirm_arrival(self, info: Info, saga_id: str) -> SagaPayload:
+        try:
+            saga = await _ctx(info)["orchestrator"].confirm_arrival(saga_id)
+        except (LookupError, ValueError) as exc:
+            raise UserError(str(exc)) from exc
+        ok = saga["status"] == "COMPLETED"
+        message = "Carga activa" if ok else f"SAGA {saga['status']}: {saga.get('failure_message')}"
+        return SagaPayload(success=ok, message=message, saga=to_saga(saga))
+
+    @strawberry.mutation(description="Cancela una reserva anticipada (libera saldo y bahía).")
+    async def cancel_reservation(self, info: Info, saga_id: str) -> SagaPayload:
+        try:
+            saga = await _ctx(info)["orchestrator"].cancel(saga_id)
+        except (LookupError, ValueError) as exc:
+            raise UserError(str(exc)) from exc
+        return SagaPayload(success=True, message="Reserva cancelada", saga=to_saga(saga))
 
     @strawberry.mutation(description="Detiene la carga y libera el conector.")
     async def stop_charging(self, info: Info, saga_id: str) -> SagaPayload:

@@ -68,10 +68,14 @@ def _create_tables(ddb: Any, settings: Settings) -> list[str]:
 
 
 class Platform:
-    def __init__(self, gateway: httpx.AsyncClient, settings: Settings, ddb: Any) -> None:
+    def __init__(
+        self, gateway: httpx.AsyncClient, settings: Settings, ddb: Any, apps: dict, gateway_app
+    ) -> None:
         self.gateway = gateway
         self.settings = settings
         self.ddb = ddb
+        self.apps = apps
+        self.gateway_app = gateway_app
 
     async def gql(
         self, query: str, variables: dict[str, Any] | None = None, *, admin: bool = False
@@ -82,6 +86,14 @@ class Platform:
         )
         response.raise_for_status()
         return response.json()
+
+    @property
+    def reservations_repo(self):
+        return self.apps["reservations"].state.repo
+
+    @property
+    def supervisor(self):
+        return self.gateway_app.state.supervisor
 
     def item(self, resource: str, pk: str, sk: str | None = "META") -> dict[str, Any] | None:
         from aegis_common.aws import from_item
@@ -102,6 +114,7 @@ async def platform(aws_endpoint, monkeypatch):
     from station_reservation.main import create_app as reservation_app
 
     monkeypatch.setenv("PEAK_HOURS", "0-24")  # tarifa determinista: siempre "hora pico"
+    monkeypatch.setenv("CHARGING_SIMULATION_SPEEDUP", "2000")  # la carga termina en segundos
     monkeypatch.setenv("FLAGS_ADMIN_TOKEN", ADMIN_TOKEN)
 
     prefix = f"it{uuid.uuid4().hex[:8]}"
@@ -140,7 +153,7 @@ async def platform(aws_endpoint, monkeypatch):
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=gateway), base_url="http://gateway"
     ) as http:
-        yield Platform(http, base, ddb)
+        yield Platform(http, base, ddb, apps, gateway)
     await clients.aclose()
     for name in tables:
         ddb.delete_table(TableName=name)
