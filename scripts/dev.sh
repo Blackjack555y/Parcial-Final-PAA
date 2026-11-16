@@ -3,6 +3,7 @@
 #   ./scripts/dev.sh up        levanta Floci (persistente) y espera a que esté sano
 #   ./scripts/dev.sh up-apps [env]  levanta además los 4 servicios en contenedores (gateway :8000)
 #   ./scripts/dev.sh down-apps      detiene los contenedores de los servicios (Floci sigue)
+#   ./scripts/dev.sh up-observability  Prefect (UI :4200) + flujos de salud y auditoría
 #   ./scripts/dev.sh down      detiene el stack (los datos se conservan)
 #   ./scripts/dev.sh reset     detiene el stack y BORRA los datos de Floci (pide confirmación)
 #   ./scripts/dev.sh status    estado de los contenedores y de Floci
@@ -53,8 +54,17 @@ case "${1:-help}" in
     docker compose -f compose.yaml -f compose.apps.yaml rm -f \
       graphql-gateway station-reservation-service billing-wallet-service energy-dispatch-service
     ;;
+  up-observability)
+    # Tokens admin de cada ambiente (Secret de Kubernetes) para la remediación opcional.
+    for e in dev test prod; do
+      tok="$(kubectl get secret aegisvolt-admin -n "aegisvolt-$e" -o jsonpath='{.data.token}' 2>/dev/null | base64 -d || true)"
+      export "ADMIN_TOKEN_${e^^}=$tok"
+    done
+    docker compose -f compose.yaml -f compose.observability.yaml up -d --build --wait
+    echo "Prefect listo: http://127.0.0.1:4200"
+    ;;
   down)
-    docker compose -f compose.yaml -f compose.apps.yaml down
+    docker compose -f compose.yaml -f compose.apps.yaml -f compose.observability.yaml down
     ;;
   reset)
     read -r -p "Esto borra el estado de Floci (incluido el tfstate en S3). ¿Continuar? [s/N] " ok
@@ -87,6 +97,6 @@ case "${1:-help}" in
     esac
     ;;
   *)
-    sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
     ;;
 esac

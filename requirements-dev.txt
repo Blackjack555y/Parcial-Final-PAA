@@ -1,5 +1,5 @@
 # Dependencias de desarrollo y CI (Python 3.12).
--e ./libs/aegis_common
+-e ./libs/aegis_common[web]
 # Dependencias de los servicios (mismas versiones que sus requirements.txt)
 fastapi==0.163.1
 uvicorn[standard]==0.54.0
