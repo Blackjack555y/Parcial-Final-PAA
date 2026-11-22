@@ -90,7 +90,9 @@ def audit(snap: Snapshot, now: datetime | None = None, stuck_after_s: int = 120)
             )
 
         # 3b. Carga terminada pero el cobro no se liquidó (la flota sigue con saldo retenido).
-        if status == "FINISHED" and charge and charge.get("status") in MONEY_HELD:
+        #     Solo HELD: en el modelo anterior a la retención, CHARGED era un cobro DEFINITIVO
+        #     y una saga FINISHED con CHARGED es correcta.
+        if status == "FINISHED" and charge and charge.get("status") == "HELD":
             add(
                 "WARNING",
                 "retencion_sin_liquidar",

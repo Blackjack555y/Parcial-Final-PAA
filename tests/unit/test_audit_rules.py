@@ -129,6 +129,9 @@ def test_finished_saga_must_settle_the_hold():
     assert ("WARNING", "retencion_sin_liquidar") in _rules(snap)
     settled = _snap(sagas={"s1": {"status": "FINISHED"}}, charges={"s1": {"status": "CAPTURED"}})
     assert _rules(settled) == set()
+    # Modelo anterior: CHARGED era un cobro definitivo; una saga FINISHED así es correcta.
+    legacy = _snap(sagas={"s1": {"status": "FINISHED"}}, charges={"s1": {"status": "CHARGED"}})
+    assert _rules(legacy) == set()
 
 
 def test_awaiting_arrival_is_only_flagged_after_the_deadline():
