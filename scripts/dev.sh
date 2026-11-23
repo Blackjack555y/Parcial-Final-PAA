@@ -60,7 +60,9 @@ case "${1:-help}" in
       tok="$(kubectl get secret aegisvolt-admin -n "aegisvolt-$e" -o jsonpath='{.data.token}' 2>/dev/null | base64 -d || true)"
       export "ADMIN_TOKEN_${e^^}=$tok"
     done
-    docker compose -f compose.yaml -f compose.observability.yaml up -d --build --wait
+    # Sin --build: la imagen de flujos solo se construye si falta (un build innecesario consulta
+    # el registro y, con el credsStore de Docker Desktop, puede colgarse esperando a gpg).
+    docker compose -f compose.yaml -f compose.observability.yaml up -d --wait
     echo "Prefect listo: http://127.0.0.1:4200"
     ;;
   down)

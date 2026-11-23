@@ -96,11 +96,11 @@ cmd_up() {
     tag="$(stable_tag "$env")"
     if [[ -n "$tag" ]]; then
       echo "▶ $env ($tag): reconectar con Floci"
-      ./scripts/deploy.sh "$env" "$tag" >/dev/null
+      ./scripts/deploy.sh "$env" "$tag" | tail -1
     fi
   done
   echo "▶ Consolas";         ./scripts/ui.sh stop >/dev/null; ./scripts/ui.sh start
-  echo "▶ Prefect";          ./scripts/dev.sh up-observability >/dev/null && echo "  http://127.0.0.1:4200"
+  echo "▶ Prefect";          ./scripts/dev.sh up-observability | tail -1
   echo
   cmd_check
 }
