@@ -243,6 +243,7 @@ cd frontend && npm install && npm run dev   # desarrollo (Vite :5173 → gateway
 ./scripts/demo.sh up               # levanta todo y muestra el semáforo
 ./scripts/demo.sh reset-flags      # flags a su valor inicial
 ./scripts/demo.sh check            # semáforo de cada punto a demostrar
+./scripts/rubrica.sh               # revisión EN VIVO de los 50 criterios de la rúbrica (5.2)
 ./scripts/api.sh dev '{ environment { name version } }' -v   # entra por API GATEWAY
 
 # Calidad
@@ -261,6 +262,7 @@ cd frontend && npm install && npm run dev   # desarrollo (Vite :5173 → gateway
 | `./scripts/api.sh <env> '<query>' [--admin] [-v]` | GraphQL de un ambiente **entrando por API Gateway** |
 | `./scripts/ui.sh start\|stop\|token <env>` | Consolas web (dev :3001 · test :3002 · prod :3003) |
 | `./scripts/demo.sh up\|check\|reset-flags` | Kit del día de la demo |
+| `./scripts/rubrica.sh` | Verifica en vivo cada criterio de la rúbrica por capa (50 criterios; los efectos de prueba se revierten) |
 | `./scripts/setup_runner.sh` | Instala el runner self-hosted de GitHub Actions (servicio `systemd --user`) |
 | `./scripts/setup_rulesets.sh` | Aplica en GitHub los rulesets de `dev`/`test`/`prod` y la configuración de Actions |
 
