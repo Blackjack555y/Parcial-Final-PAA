@@ -46,8 +46,10 @@ check "Bucket del tfstate con versionamiento habilitado" bash -c \
 for env in "${ENVS[@]}"; do
   check "Historial de versiones de env:/$env/terraform.tfstate" bash -c \
     "[[ \$(aws --endpoint-url http://localhost:4566 s3api list-object-versions --bucket aegisvolt-tfstate --prefix env:/$env/terraform.tfstate --query \"length(Versions[?Key=='env:/$env/terraform.tfstate'])\" --output text) -ge 2 ]]"
+  # La salida completa va a un archivo ANTES de buscar el texto: un "| grep -q" cortaría a
+  # Terraform (SIGPIPE) antes de liberar el lock del estado en S3.
   check "Estado de $env = realidad (terraform plan sin cambios)" bash -c \
-    "./scripts/tf.sh $env plan -no-color 2>/dev/null | grep -q 'No changes'"
+    "./scripts/tf.sh $env plan -no-color >$TMP/plan-$env.txt 2>&1; grep -q 'No changes' $TMP/plan-$env.txt"
   check "5 tablas DynamoDB aegisvolt-*-$env (Database-per-Service)" bash -c \
     "[[ \$(aws --endpoint-url http://localhost:4566 dynamodb list-tables --query 'TableNames' --output text | tr '\t' '\n' | grep -c -- '-$env\$') -eq 5 ]]"
   check "VPC + VPC Endpoints (S3, DynamoDB, logs, monitoring, execute-api) en $env" bash -c \
